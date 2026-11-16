@@ -1,3 +1,4 @@
+pub mod desktop;
 pub mod dispatcher;
 pub mod history;
 pub mod media;
@@ -5,5 +6,6 @@ pub mod oauth;
 pub mod platform;
 pub mod profiles;
 pub mod registry;
+pub mod scheduler;
 pub mod threading;
 pub mod vault;

@@ -2,16 +2,57 @@ pub mod commands;
 pub mod core;
 pub mod platforms;
 
+use core::desktop::{self, DesktopSettingsState};
 use core::profiles::{self, ProfileSessionState};
+use core::scheduler::{self, ScheduleFileLock};
+use tauri::{Manager, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(ProfileSessionState::default())
+        .manage(DesktopSettingsState::default())
+        .manage(ScheduleFileLock::default())
         .setup(|app| {
-            let _ = profiles::ensure_initialized(app.handle());
+            let handle = app.handle();
+            let _ = profiles::ensure_initialized(handle);
+
+            let settings = desktop::load_settings(handle);
+            if let Ok(mut guard) = app.state::<DesktopSettingsState>().0.lock() {
+                *guard = settings.clone();
+            }
+
+            if let Err(err) = desktop::setup_tray(handle) {
+                eprintln!("Warning: {err}");
+            }
+            if let Err(err) =
+                desktop::apply_global_shortcut(handle, settings.global_shortcut.as_deref())
+            {
+                eprintln!("Warning: {err}");
+            }
+
+            scheduler::spawn_scheduler_worker(handle.clone());
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event
+                && window.label() == "main"
+            {
+                let minimize_to_tray = window
+                    .app_handle()
+                    .state::<DesktopSettingsState>()
+                    .0
+                    .lock()
+                    .map(|g| g.minimize_to_tray)
+                    .unwrap_or(true);
+
+                if minimize_to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -32,6 +73,13 @@ pub fn run() {
             commands::broadcast_post,
             commands::get_history,
             commands::clear_history,
+            commands::get_desktop_settings,
+            commands::update_desktop_settings,
+            commands::schedule_post,
+            commands::list_scheduled_posts,
+            commands::cancel_scheduled_post,
+            commands::publish_scheduled_now,
+            commands::retry_scheduled_post,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

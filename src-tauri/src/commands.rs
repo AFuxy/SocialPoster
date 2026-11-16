@@ -1,11 +1,14 @@
+use crate::core::desktop::{self, DesktopSettings, DesktopSettingsState};
 use crate::core::dispatcher::{self, PlatformDispatchRequest};
 use crate::core::history::{self, HistoryEntry};
 use crate::core::platform::{FieldKind, MediaAttachment, PlatformMetadata, PostOutcome};
 use crate::core::profiles::{self, ProfileInfo, ProfileSessionState};
+use crate::core::scheduler::{self, ScheduledPost, ScheduledPostsResponse};
 use crate::core::{registry, vault};
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 fn new_history_id() -> String {
     let nanos = SystemTime::now()
@@ -307,4 +310,163 @@ pub async fn clear_history(
 ) -> Result<(), String> {
     profiles::ensure_profile_unlocked(&app, &state, &profile_id)?;
     history::clear_history(&app, &profile_id)
+}
+
+#[tauri::command]
+pub async fn get_desktop_settings(
+    state: State<'_, DesktopSettingsState>,
+) -> Result<DesktopSettings, String> {
+    state
+        .0
+        .lock()
+        .map(|guard| guard.clone())
+        .map_err(|_| "Desktop settings lock poisoned.".to_string())
+}
+
+#[tauri::command]
+pub async fn update_desktop_settings(
+    app: AppHandle,
+    state: State<'_, DesktopSettingsState>,
+    settings: DesktopSettings,
+) -> Result<DesktopSettings, String> {
+    let normalized = DesktopSettings {
+        minimize_to_tray: settings.minimize_to_tray,
+        global_shortcut: settings
+            .global_shortcut
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+    };
+
+    desktop::apply_global_shortcut(&app, normalized.global_shortcut.as_deref())?;
+    desktop::save_settings(&app, &normalized)?;
+
+    if let Ok(mut guard) = state.0.lock() {
+        *guard = normalized.clone();
+    }
+
+    Ok(normalized)
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn schedule_post(
+    app: AppHandle,
+    state: State<'_, ProfileSessionState>,
+    profile_id: String,
+    scheduled_for: String,
+    text: String,
+    overrides: HashMap<String, String>,
+    media: Vec<MediaAttachment>,
+    platform_ids: Vec<String>,
+    auto_thread: Option<bool>,
+) -> Result<ScheduledPost, String> {
+    profiles::ensure_profile_unlocked(&app, &state, &profile_id)?;
+
+    let parsed_time = DateTime::parse_from_rfc3339(&scheduled_for)
+        .map_err(|_| "Invalid scheduled time format.".to_string())?
+        .with_timezone(&Utc);
+    if parsed_time <= Utc::now() {
+        return Err("Scheduled time must be in the future.".to_string());
+    }
+
+    if platform_ids.is_empty() {
+        return Err("Select at least one platform to schedule.".to_string());
+    }
+
+    let use_auto_thread = auto_thread.unwrap_or(false);
+    for pid in &platform_ids {
+        let platform =
+            registry::find_platform(pid).ok_or_else(|| format!("Unknown platform '{pid}'."))?;
+        let caps = platform.capabilities();
+        let resolved_text = overrides.get(pid).map(String::as_str).unwrap_or(&text);
+
+        if resolved_text.trim().is_empty() && media.is_empty() {
+            return Err("Post cannot be empty.".to_string());
+        }
+        if caps.requires_media && media.is_empty() {
+            return Err(format!("{} requires media.", platform.name()));
+        }
+        if resolved_text.chars().count() > caps.max_chars
+            && !(use_auto_thread && caps.supports_threads)
+        {
+            return Err(format!(
+                "{} exceeds the {} character limit.",
+                platform.name(),
+                caps.max_chars
+            ));
+        }
+    }
+
+    let normalized_time = parsed_time.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let job = scheduler::add_scheduled_job(
+        &app,
+        &profile_id,
+        normalized_time,
+        text,
+        overrides,
+        &media,
+        platform_ids,
+        use_auto_thread,
+    )?;
+    let _ = app.emit("schedule-updated", ());
+    Ok(job)
+}
+
+#[tauri::command]
+pub async fn list_scheduled_posts(
+    app: AppHandle,
+    state: State<'_, ProfileSessionState>,
+    profile_id: String,
+) -> Result<ScheduledPostsResponse, String> {
+    let profiles = profiles::ensure_initialized(&app)?;
+    let profile = profiles
+        .iter()
+        .find(|p| p.id == profile_id)
+        .ok_or_else(|| format!("Unknown profile '{profile_id}'."))?;
+
+    if !state.is_unlocked(profile) {
+        return Ok(ScheduledPostsResponse {
+            is_locked: true,
+            posts: Vec::new(),
+        });
+    }
+
+    let posts = scheduler::list_jobs(&app, &profile_id)?;
+    Ok(ScheduledPostsResponse {
+        is_locked: false,
+        posts,
+    })
+}
+
+#[tauri::command]
+pub async fn cancel_scheduled_post(
+    app: AppHandle,
+    state: State<'_, ProfileSessionState>,
+    profile_id: String,
+    job_id: String,
+) -> Result<(), String> {
+    profiles::ensure_profile_unlocked(&app, &state, &profile_id)?;
+    scheduler::cancel_job(&app, &profile_id, &job_id)
+}
+
+#[tauri::command]
+pub async fn publish_scheduled_now(
+    app: AppHandle,
+    state: State<'_, ProfileSessionState>,
+    profile_id: String,
+    job_id: String,
+) -> Result<Vec<PostOutcome>, String> {
+    profiles::ensure_profile_unlocked(&app, &state, &profile_id)?;
+    scheduler::execute_scheduled_job(&app, &profile_id, &job_id).await
+}
+
+#[tauri::command]
+pub async fn retry_scheduled_post(
+    app: AppHandle,
+    state: State<'_, ProfileSessionState>,
+    profile_id: String,
+    job_id: String,
+) -> Result<ScheduledPost, String> {
+    profiles::ensure_profile_unlocked(&app, &state, &profile_id)?;
+    scheduler::retry_job(&app, &profile_id, &job_id)
 }

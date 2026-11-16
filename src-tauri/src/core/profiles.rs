@@ -255,6 +255,12 @@ pub fn ensure_profile_unlocked(
     }
 }
 
+pub fn profile_exists(app: &AppHandle, profile_id: &str) -> bool {
+    ensure_initialized(app)
+        .map(|list| list.iter().any(|p| p.id == profile_id))
+        .unwrap_or(false)
+}
+
 pub fn list_profiles(
     app: &AppHandle,
     state: &ProfileSessionState,
@@ -474,6 +480,7 @@ pub fn delete_profile(
     }
 
     save_profiles(app, &profiles)?;
+    crate::core::scheduler::refresh_tray_tooltip(app);
     Ok(())
 }
 

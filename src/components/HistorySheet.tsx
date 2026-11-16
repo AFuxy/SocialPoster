@@ -12,7 +12,6 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
   SheetContent,
@@ -56,7 +55,10 @@ export function HistorySheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="gap-0 p-0 sm:max-w-lg">
+      <SheetContent
+        side="right"
+        className="flex w-full max-w-md flex-col gap-0 overflow-x-hidden p-0 sm:max-w-lg"
+      >
         <SheetHeader className="border-b px-5 py-4 pr-12">
           <div className="flex items-center justify-between gap-2">
             <SheetTitle className="flex items-center gap-2 text-base">
@@ -82,14 +84,14 @@ export function HistorySheet({
           </div>
         </SheetHeader>
 
-        <ScrollArea className="flex-1 px-5 py-4">
+        <div className="min-w-0 w-full flex-1 overflow-x-hidden overflow-y-auto px-5 py-4">
           {entries.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-16 text-center text-sm text-muted-foreground">
               <History className="size-8 opacity-40" />
               <p>No posts yet.</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="min-w-0 w-full space-y-3 overflow-hidden">
               {entries.map((entry) => {
                 const hasFailures = entry.outcomes.some((o) => !o.success);
                 const hasSuccesses = entry.outcomes.some((o) => o.success);
@@ -99,7 +101,7 @@ export function HistorySheet({
                 return (
                   <article
                     key={entry.id}
-                    className="space-y-3 rounded-xl border bg-card p-3.5 shadow-2xs"
+                    className="w-full min-w-0 max-w-full space-y-3 overflow-hidden rounded-xl border bg-card p-3.5 shadow-2xs"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                       <span className="inline-flex items-center gap-1.5">
@@ -119,7 +121,7 @@ export function HistorySheet({
                       )}
                     </div>
 
-                    <p className="line-clamp-3 text-sm leading-relaxed whitespace-pre-wrap text-foreground">
+                    <p className="line-clamp-3 w-full min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] break-all text-sm leading-relaxed text-foreground">
                       {preview.length > 0 ? (
                         preview
                       ) : (
@@ -206,7 +208,7 @@ export function HistorySheet({
               })}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </SheetContent>
     </Sheet>
   );

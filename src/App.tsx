@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { ThemeProvider, useTheme } from "next-themes";
 import {
+  Clock,
   Download,
   HeartHandshake,
   History,
@@ -20,6 +22,7 @@ import { DispatchResults } from "@/components/DispatchResults";
 import { HistorySheet } from "@/components/HistorySheet";
 import { PlatformBar } from "@/components/PlatformBar";
 import { ProfileMenu } from "@/components/ProfileMenu";
+import { QueueDialog } from "@/components/QueueDialog";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { UnlockProfileCard } from "@/components/UnlockProfileCard";
 import { Badge } from "@/components/ui/badge";
@@ -41,14 +44,19 @@ import {
 } from "@/lib/storage";
 import {
   broadcastPost,
+  cancelScheduledPost,
   clearHistory,
   createProfile,
   deleteProfile,
   getHistory,
   getPlatforms,
   listProfiles,
+  listScheduledPosts,
   lockProfile,
+  publishScheduledNow,
   renameProfile,
+  retryScheduledPost,
+  schedulePost,
   setProfilePassword,
   unlockProfile,
   type HistoryEntry,
@@ -56,6 +64,7 @@ import {
   type PlatformMetadata,
   type PostOutcome,
   type ProfileInfo,
+  type ScheduledPost,
 } from "@/lib/tauri";
 import {
   checkForUpdateSilently,
@@ -164,6 +173,7 @@ function SocialPosterApp() {
   const [draftRestored, setDraftRestored] = useState(false);
   const [autoThread, setAutoThread] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
 
   const [platforms, setPlatforms] = useState<PlatformMetadata[]>([]);
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
@@ -175,6 +185,7 @@ function SocialPosterApp() {
     useState<PlatformMetadata | null>(null);
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
 
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
   const [updatePhase, setUpdatePhase] = useState<
@@ -197,9 +208,11 @@ function SocialPosterApp() {
     setDraftRestored(false);
     setAutoThread(false);
     setHistory([]);
+    setScheduledPosts([]);
     setOutcomes([]);
     setSettingsPlatform(null);
     setHistoryOpen(false);
+    setQueueOpen(false);
   }, []);
 
   const loadUnlockedProfileData = useCallback(
@@ -209,13 +222,15 @@ function SocialPosterApp() {
       autoEnablePlatformId?: string,
     ) => {
       try {
-        const [platformList, historyList] = await Promise.all([
+        const [platformList, historyList, scheduleRes] = await Promise.all([
           getPlatforms(profileId),
           getHistory(profileId),
+          listScheduledPosts(profileId),
         ]);
 
         setPlatforms(platformList);
         setHistory(historyList);
+        setScheduledPosts(scheduleRes.posts);
         setSettingsPlatform((current) =>
           current
             ? (platformList.find((p) => p.id === current.id) ?? current)
@@ -608,6 +623,116 @@ function SocialPosterApp() {
     }
   };
 
+  useEffect(() => {
+    if (!activeProfile || !activeProfile.isUnlocked) return;
+    const profileId = activeProfile.id;
+    let active = true;
+    const unlistenPromise = listen<string>("schedule-updated", (event) => {
+      if (!active) return;
+      if (event.payload && event.payload !== profileId) return;
+      void Promise.all([
+        listScheduledPosts(profileId),
+        getHistory(profileId),
+      ])
+        .then(([scheduleRes, historyList]) => {
+          if (!active) return;
+          setScheduledPosts(scheduleRes.posts);
+          setHistory(historyList);
+        })
+        .catch(() => {
+          // Ignore transient refresh errors from background event.
+        });
+    });
+    return () => {
+      active = false;
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [activeProfile]);
+
+  const handleSchedulePost = async (
+    scheduledForUtcIso: string,
+    platformIds: string[],
+  ) => {
+    if (!activeProfile) return;
+    const profileId = activeProfile.id;
+    setIsPosting(true);
+    try {
+      await schedulePost(
+        profileId,
+        scheduledForUtcIso,
+        draft.masterText,
+        draft.overrides,
+        draft.media,
+        platformIds,
+        autoThread,
+      );
+      const scheduleRes = await listScheduledPosts(profileId);
+      setScheduledPosts(scheduleRes.posts);
+      clearStoredDraft(profileId);
+      setDraft(EMPTY_DRAFT);
+      setDraftRestored(false);
+      toast.success("Post scheduled.");
+    } catch (err) {
+      toast.error(`Schedule failed: ${String(err)}`);
+    } finally {
+      setIsPosting(false);
+    }
+  };
+
+  const handlePublishScheduledNow = async (jobId: string) => {
+    if (!activeProfile) return;
+    const profileId = activeProfile.id;
+    try {
+      const results = await publishScheduledNow(profileId, jobId);
+      setOutcomes(results);
+      const [scheduleRes, historyList] = await Promise.all([
+        listScheduledPosts(profileId),
+        getHistory(profileId),
+      ]);
+      setScheduledPosts(scheduleRes.posts);
+      setHistory(historyList);
+      const okCount = results.filter((r) => r.success).length;
+      if (results.length > 0 && okCount === results.length) {
+        toast.success(`Posted to ${okCount} platforms.`);
+      } else {
+        toast.warning(`${okCount}/${results.length} succeeded.`);
+      }
+    } catch (err) {
+      toast.error(`Failed to publish scheduled post: ${String(err)}`);
+    }
+  };
+
+  const handleCancelScheduledPost = async (jobId: string) => {
+    if (!activeProfile) return;
+    const profileId = activeProfile.id;
+    try {
+      await cancelScheduledPost(profileId, jobId);
+      const scheduleRes = await listScheduledPosts(profileId);
+      setScheduledPosts(scheduleRes.posts);
+      toast.success("Scheduled post cancelled.");
+    } catch (err) {
+      toast.error(`Failed to cancel scheduled post: ${String(err)}`);
+    }
+  };
+
+  const handleRetryScheduledPost = async (jobId: string) => {
+    if (!activeProfile) return;
+    const profileId = activeProfile.id;
+    try {
+      await retryScheduledPost(profileId, jobId);
+      const scheduleRes = await listScheduledPosts(profileId);
+      setScheduledPosts(scheduleRes.posts);
+      toast.success("Scheduled post queued for retry.");
+    } catch (err) {
+      toast.error(`Failed to retry scheduled post: ${String(err)}`);
+    }
+  };
+
+  const pendingQueueCount = useMemo(
+    () => scheduledPosts.filter((p) => p.status === "pending").length,
+    [scheduledPosts],
+  );
+
   const isLocked = Boolean(activeProfile && !activeProfile.isUnlocked);
 
   return (
@@ -694,6 +819,25 @@ function SocialPosterApp() {
               variant="outline"
               size="sm"
               disabled={isLocked || !activeProfile}
+              onClick={() => setQueueOpen(true)}
+            >
+              <Clock className="mr-1.5 size-3.5" />
+              <span>Queue</span>
+              {!isLocked && pendingQueueCount > 0 && (
+                <Badge
+                  variant="secondary"
+                  className="ml-1.5 h-4 px-1.5 text-[10px] font-normal"
+                >
+                  {pendingQueueCount}
+                </Badge>
+              )}
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isLocked || !activeProfile}
               onClick={() => setHistoryOpen(true)}
             >
               <History className="mr-1.5 size-3.5" />
@@ -760,6 +904,7 @@ function SocialPosterApp() {
               }}
               isPosting={isPosting}
               onBroadcast={handleBroadcast}
+              onSchedule={handleSchedulePost}
               onOpenSettings={(platform) => setSettingsPlatform(platform)}
             />
 
@@ -799,6 +944,16 @@ function SocialPosterApp() {
             onOpenChange={setHistoryOpen}
             onLoadIntoComposer={handleLoadFromHistory}
             onClearHistory={() => void handleClearHistory()}
+          />
+
+          <QueueDialog
+            open={queueOpen}
+            onOpenChange={setQueueOpen}
+            posts={scheduledPosts}
+            platforms={platforms}
+            onPublishNow={handlePublishScheduledNow}
+            onRetry={handleRetryScheduledPost}
+            onCancel={handleCancelScheduledPost}
           />
         </>
       )}

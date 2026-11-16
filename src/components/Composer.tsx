@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
+  Clock,
   Film,
   ImagePlus,
   Loader2,
@@ -10,6 +12,7 @@ import {
   Send,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +39,10 @@ interface ComposerProps {
   onAutoThreadChange: (enabled: boolean) => void;
   isPosting: boolean;
   onBroadcast: (targets: PlatformDispatchRequest[]) => Promise<void>;
+  onSchedule: (
+    scheduledForUtcIso: string,
+    platformIds: string[],
+  ) => Promise<void>;
   onOpenSettings: (platform: PlatformMetadata) => void;
 }
 
@@ -106,10 +113,29 @@ export function Composer({
   onAutoThreadChange,
   isPosting,
   onBroadcast,
+  onSchedule,
 }: ComposerProps) {
   const { masterText, overrides, media } = draft;
   const [activeTab, setActiveTab] = useState("master");
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduledLocal, setScheduledLocal] = useState("");
+  const masterTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const unlistenPromise = listen("focus-composer", () => {
+      if (!active) return;
+      setActiveTab("master");
+      requestAnimationFrame(() => {
+        masterTextareaRef.current?.focus();
+      });
+    });
+    return () => {
+      active = false;
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
 
   const hasDraftContent =
     masterText.trim().length > 0 ||
@@ -283,6 +309,26 @@ export function Composer({
   const handleSubmit = async () => {
     if (!canPost) return;
 
+    if (scheduleOpen) {
+      if (!scheduledLocal) {
+        toast.error("Choose a date and time.");
+        return;
+      }
+      const parsed = new Date(scheduledLocal);
+      if (Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+        toast.error("Choose a future date and time.");
+        return;
+      }
+      const utcIso = parsed.toISOString().replace(/\.\d{3}Z$/, "Z");
+      await onSchedule(
+        utcIso,
+        validations.map((v) => v.platform.id),
+      );
+      setScheduledLocal("");
+      setScheduleOpen(false);
+      return;
+    }
+
     const targets: PlatformDispatchRequest[] = validations.map((v) => ({
       platformId: v.platform.id,
       text: v.resolvedText,
@@ -379,6 +425,7 @@ export function Composer({
 
         <TabsContent value="master" className="mt-0 space-y-3">
           <Textarea
+            ref={masterTextareaRef}
             value={masterText}
             onChange={(e) => {
               const value = e.target.value;
@@ -529,8 +576,8 @@ export function Composer({
       )}
 
       {/* Compact character counter, Auto-thread toggle & Post Now footer */}
-      <div className="mt-4 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+      <div className="mt-4 flex min-h-8 flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-xs">
           {enabledPlatforms.length === 0 ? (
             <span className="text-muted-foreground">
               Click a platform above to set it up
@@ -665,7 +712,7 @@ export function Composer({
           })()}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             role="switch"
@@ -673,7 +720,7 @@ export function Composer({
             onClick={() => onAutoThreadChange(!autoThread)}
             disabled={isPosting}
             className={cn(
-              "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+              "inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-xs leading-none font-medium transition-colors",
               autoThread
                 ? "border-primary bg-primary/10 text-foreground"
                 : "border-border bg-muted/40 text-muted-foreground hover:text-foreground",
@@ -688,18 +735,68 @@ export function Composer({
             <span>Auto-thread</span>
           </button>
 
+          {scheduleOpen ? (
+            <div className="flex h-8 shrink-0 items-center overflow-hidden rounded-md border border-border bg-background">
+              <input
+                type="datetime-local"
+                value={scheduledLocal}
+                onChange={(e) => setScheduledLocal(e.target.value)}
+                disabled={isPosting}
+                aria-label="Schedule date and time"
+                className="h-8 w-[172px] bg-transparent px-2 py-0 text-xs leading-none text-foreground focus:outline-none [&::-webkit-calendar-picker-indicator]:m-0"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => {
+                  setScheduleOpen(false);
+                  setScheduledLocal("");
+                }}
+                disabled={isPosting}
+                aria-label="Cancel schedule"
+                title="Cancel schedule"
+                className="h-8 w-8 shrink-0 rounded-none border-l border-border text-xs leading-none"
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              onClick={() => setScheduleOpen(true)}
+              disabled={isPosting}
+              aria-label="Schedule post"
+              title="Schedule post"
+              className="h-8 w-8 shrink-0 text-xs leading-none"
+            >
+              <Clock className="size-4" />
+            </Button>
+          )}
+
           <Button
             type="button"
+            size="sm"
             onClick={handleSubmit}
-            disabled={!canPost}
-            className="shrink-0"
+            disabled={!canPost || (scheduleOpen && !scheduledLocal)}
+            className="h-8 shrink-0 text-xs leading-none"
           >
-          {isPosting ? (
-            <Loader2 className="mr-2 size-4 animate-spin" />
-          ) : (
-            <Send className="mr-2 size-4" />
-          )}
-          {isPosting ? "Posting..." : "Post Now"}
+            {isPosting ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : scheduleOpen ? (
+              <Clock className="mr-2 size-4" />
+            ) : (
+              <Send className="mr-2 size-4" />
+            )}
+            {isPosting
+              ? scheduleOpen
+                ? "Scheduling..."
+                : "Posting..."
+              : scheduleOpen
+                ? "Schedule"
+                : "Post Now"}
           </Button>
         </div>
       </div>

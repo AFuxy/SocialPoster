@@ -108,6 +108,37 @@ export interface HistoryEntry {
   outcomes: PostOutcome[];
 }
 
+export interface DesktopSettings {
+  minimizeToTray: boolean;
+  globalShortcut: string | null;
+}
+
+export interface SavedMediaRef {
+  filename: string;
+  mimeType: string;
+  altText?: string | null;
+  relativePath: string;
+}
+
+export interface ScheduledPost {
+  id: string;
+  profileId: string;
+  scheduledFor: string;
+  text: string;
+  overrides: Record<string, string>;
+  mediaRefs: SavedMediaRef[];
+  platformIds: string[];
+  autoThread: boolean;
+  status: "pending" | "publishing" | "failed" | string;
+  error: string | null;
+  createdAt: string;
+}
+
+export interface ScheduledPostsResponse {
+  isLocked: boolean;
+  posts: ScheduledPost[];
+}
+
 export async function listProfiles(): Promise<ProfileInfo[]> {
   return invoke<ProfileInfo[]>("list_profiles");
 }
@@ -229,4 +260,61 @@ export async function getHistory(profileId: string): Promise<HistoryEntry[]> {
 
 export async function clearHistory(profileId: string): Promise<void> {
   return invoke<void>("clear_history", { profileId });
+}
+
+export async function getDesktopSettings(): Promise<DesktopSettings> {
+  return invoke<DesktopSettings>("get_desktop_settings");
+}
+
+export async function updateDesktopSettings(
+  settings: DesktopSettings,
+): Promise<DesktopSettings> {
+  return invoke<DesktopSettings>("update_desktop_settings", { settings });
+}
+
+export async function schedulePost(
+  profileId: string,
+  scheduledFor: string,
+  text: string,
+  overrides: Record<string, string>,
+  media: MediaAttachment[],
+  platformIds: string[],
+  autoThread: boolean,
+): Promise<ScheduledPost> {
+  return invoke<ScheduledPost>("schedule_post", {
+    profileId,
+    scheduledFor,
+    text,
+    overrides,
+    media,
+    platformIds,
+    autoThread,
+  });
+}
+
+export async function listScheduledPosts(
+  profileId: string,
+): Promise<ScheduledPostsResponse> {
+  return invoke<ScheduledPostsResponse>("list_scheduled_posts", { profileId });
+}
+
+export async function cancelScheduledPost(
+  profileId: string,
+  jobId: string,
+): Promise<void> {
+  return invoke<void>("cancel_scheduled_post", { profileId, jobId });
+}
+
+export async function publishScheduledNow(
+  profileId: string,
+  jobId: string,
+): Promise<PostOutcome[]> {
+  return invoke<PostOutcome[]>("publish_scheduled_now", { profileId, jobId });
+}
+
+export async function retryScheduledPost(
+  profileId: string,
+  jobId: string,
+): Promise<ScheduledPost> {
+  return invoke<ScheduledPost>("retry_scheduled_post", { profileId, jobId });
 }
