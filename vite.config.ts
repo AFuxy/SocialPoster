@@ -20,8 +20,14 @@ export default defineConfig(() => ({
         codeSplitting: {
           groups: [
             {
+              name: "vendor-tauri",
+              test: /[\\/]node_modules[\\/]@tauri-apps[\\/]/,
+              priority: 20,
+            },
+            {
               name: "vendor",
               test: /node_modules/,
+              priority: 10,
             },
           ],
         },

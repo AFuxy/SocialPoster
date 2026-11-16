@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ThemeProvider, useTheme } from "next-themes";
 import {
@@ -14,21 +22,46 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { AddProfileDialog } from "@/components/AddProfileDialog";
 import { AppLogo } from "@/components/AppLogo";
-import { BackupDialog } from "@/components/BackupDialog";
 import { Composer } from "@/components/Composer";
-import { CreditsDialog } from "@/components/CreditsDialog";
 import { DispatchResults } from "@/components/DispatchResults";
-import { HistorySheet } from "@/components/HistorySheet";
 import { PlatformBar } from "@/components/PlatformBar";
 import { ProfileMenu } from "@/components/ProfileMenu";
-import { QueueDialog } from "@/components/QueueDialog";
-import { SettingsDialog } from "@/components/SettingsDialog";
 import { UnlockProfileCard } from "@/components/UnlockProfileCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
+
+const AddProfileDialog = lazy(() =>
+  import("@/components/AddProfileDialog").then((m) => ({
+    default: m.AddProfileDialog,
+  })),
+);
+const BackupDialog = lazy(() =>
+  import("@/components/BackupDialog").then((m) => ({
+    default: m.BackupDialog,
+  })),
+);
+const CreditsDialog = lazy(() =>
+  import("@/components/CreditsDialog").then((m) => ({
+    default: m.CreditsDialog,
+  })),
+);
+const HistorySheet = lazy(() =>
+  import("@/components/HistorySheet").then((m) => ({
+    default: m.HistorySheet,
+  })),
+);
+const QueueDialog = lazy(() =>
+  import("@/components/QueueDialog").then((m) => ({
+    default: m.QueueDialog,
+  })),
+);
+const SettingsDialog = lazy(() =>
+  import("@/components/SettingsDialog").then((m) => ({
+    default: m.SettingsDialog,
+  })),
+);
 import {
   clearProfileStorage,
   clearStoredDraft,
@@ -932,76 +965,90 @@ function SocialPosterApp() {
         )}
       </main>
 
-      {activeProfile && !isLocked && (
-        <>
-          <SettingsDialog
-            profileId={activeProfile.id}
-            platform={settingsPlatform}
-            open={settingsPlatform !== null}
-            onOpenChange={(open) => {
-              if (!open) setSettingsPlatform(null);
+      <Suspense fallback={null}>
+        {activeProfile && !isLocked && (
+          <>
+            {settingsPlatform !== null && (
+              <SettingsDialog
+                profileId={activeProfile.id}
+                platform={settingsPlatform}
+                open={true}
+                onOpenChange={(open) => {
+                  if (!open) setSettingsPlatform(null);
+                }}
+                onSaved={() =>
+                  loadUnlockedProfileData(
+                    activeProfile.id,
+                    false,
+                    settingsPlatform?.id,
+                  )
+                }
+                onUnlinked={(platformId) =>
+                  updateEnabledIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(platformId);
+                    return next;
+                  })
+                }
+              />
+            )}
+
+            {historyOpen && (
+              <HistorySheet
+                entries={history}
+                platforms={platforms}
+                open={true}
+                onOpenChange={setHistoryOpen}
+                onLoadIntoComposer={handleLoadFromHistory}
+                onClearHistory={() => void handleClearHistory()}
+                onRecallPost={handleRecallPost}
+              />
+            )}
+
+            {queueOpen && (
+              <QueueDialog
+                open={true}
+                onOpenChange={setQueueOpen}
+                posts={scheduledPosts}
+                platforms={platforms}
+                onPublishNow={handlePublishScheduledNow}
+                onRetry={handleRetryScheduledPost}
+                onCancel={handleCancelScheduledPost}
+              />
+            )}
+          </>
+        )}
+
+        {creditsOpen && (
+          <CreditsDialog
+            platforms={platforms}
+            open={true}
+            onOpenChange={setCreditsOpen}
+          />
+        )}
+
+        {addProfileOpen && (
+          <AddProfileDialog
+            open={true}
+            onOpenChange={setAddProfileOpen}
+            onCreate={handleCreateProfile}
+          />
+        )}
+
+        {backupMode !== null && (
+          <BackupDialog
+            mode={backupMode}
+            activeProfile={activeProfile}
+            onClose={() => setBackupMode(null)}
+            onImported={async (result) => {
+              setActiveProfileId(result.profile.id);
+              setActiveProfileIdState(result.profile.id);
+              clearInMemoryProfileState();
+              await refreshProfilesAndActivate(result.profile.id);
             }}
-            onSaved={() =>
-              loadUnlockedProfileData(
-                activeProfile.id,
-                false,
-                settingsPlatform?.id,
-              )
-            }
-            onUnlinked={(platformId) =>
-              updateEnabledIds((prev) => {
-                const next = new Set(prev);
-                next.delete(platformId);
-                return next;
-              })
-            }
           />
-
-          <HistorySheet
-            entries={history}
-            platforms={platforms}
-            open={historyOpen}
-            onOpenChange={setHistoryOpen}
-            onLoadIntoComposer={handleLoadFromHistory}
-            onClearHistory={() => void handleClearHistory()}
-            onRecallPost={handleRecallPost}
-          />
-
-          <QueueDialog
-            open={queueOpen}
-            onOpenChange={setQueueOpen}
-            posts={scheduledPosts}
-            platforms={platforms}
-            onPublishNow={handlePublishScheduledNow}
-            onRetry={handleRetryScheduledPost}
-            onCancel={handleCancelScheduledPost}
-          />
-        </>
-      )}
-
-      <CreditsDialog
-        platforms={platforms}
-        open={creditsOpen}
-        onOpenChange={setCreditsOpen}
-      />
-
-      <AddProfileDialog
-        open={addProfileOpen}
-        onOpenChange={setAddProfileOpen}
-        onCreate={handleCreateProfile}
-      />
-
-      <BackupDialog
-        mode={backupMode}
-        activeProfile={activeProfile}
-        onClose={() => setBackupMode(null)}
-        onImported={async (result) => {
-          setActiveProfileId(result.profile.id);
-          setActiveProfileIdState(result.profile.id);
-          clearInMemoryProfileState();
-          await refreshProfilesAndActivate(result.profile.id);
-        }}
-      />
+        )}
+      </Suspense>
 
       <Toaster position="bottom-right" richColors />
     </div>
