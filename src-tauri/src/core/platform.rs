@@ -67,6 +67,8 @@ pub struct AuthMode {
 pub struct PlatformCapabilities {
     pub max_chars: usize,
     pub max_images: usize,
+    #[serde(default)]
+    pub max_image_bytes: Option<usize>,
     pub supports_video: bool,
     pub requires_media: bool,
 }
@@ -95,6 +97,21 @@ pub struct MediaAttachment {
     pub path: PathBuf,
     pub mime_type: String,
     pub alt_text: Option<String>,
+    #[serde(skip)]
+    pub bytes: Option<Vec<u8>>,
+}
+
+impl MediaAttachment {
+    /// Returns the in-memory bytes when present (e.g. after compression),
+    /// otherwise reads the original file asynchronously from disk.
+    pub async fn read_bytes(&self) -> Result<Vec<u8>, String> {
+        if let Some(ref data) = self.bytes {
+            return Ok(data.clone());
+        }
+        tokio::fs::read(&self.path)
+            .await
+            .map_err(|err| format!("Failed to read attachment '{}': {err}", self.path.display()))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +129,8 @@ pub struct PostOutcome {
     pub success: bool,
     pub post_url: Option<String>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub notes: Vec<String>,
 }
 
 #[async_trait]

@@ -35,6 +35,7 @@ getrandom = "0.2"
 url = "2"
 semver = "1"
 open = "5"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 tauri-plugin-process = "2"
 
 

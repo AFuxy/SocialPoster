@@ -9,9 +9,25 @@ Thank you for helping expand our supported social networks! Because this project
 1. **One File Per Network:** Place your implementation at `src-tauri/src/platforms/<network_id>.rs` (lowercase snake_case, e.g. `telegram.rs`, `threads.rs`, `lemmy.rs`).
 2. **Zero Central Servers:** Users run this app locally and supply their own API keys, App Passwords, or OAuth tokens. Never hardcode personal tokens or route user traffic through third-party proxies.
 3. **Self-Documenting Setup:** Every user installing the app from GitHub relies on your `setup_instructions()` Markdown guide to obtain their credentials. Write clear, numbered steps assuming the user has never opened a developer portal before.
-4. **Accurate Capabilities:** Set `max_chars`, `max_images`, `supports_video`, and `requires_media` truthfully so the UI can validate posts before broadcasting.
-5. **Semantic Versioning & Host Compatibility:** Declare `version()` (e.g. `"0.1.0"`) and `compatible_app_version()` (a SemVer requirement such as `"^0.1.0"`). The host validates this constraint safely at runtime so incompatible plugins fail gracefully instead of panicking or corrupting data.
-6. **Graceful Errors:** Never use `.unwrap()` or `panic!()` inside `publish()`, `verify_credentials()`, or `start_oauth()`. Map HTTP status codes and API error bodies into clear, human-readable `Err(String)` messages.
+4. **Accurate Capabilities & Image Byte Ceilings:** Set `max_chars`, `max_images`, `max_image_bytes`, `supports_video`, and `requires_media` truthfully. Specify the network's documented image byte limit in `PlatformCapabilities { max_image_bytes: Some(...), .. }` (for example, `Some(976_562)` for Bluesky or `Some(5_000_000)` for X / LinkedIn) and rely on `core::media` for automatic resizing and JPEG compression rather than adding image-processing logic inside individual `.rs` platform files. Always read attachment bytes via `attachment.read_bytes().await?`.
+5. **Semantic Versioning & Host Compatibility:** Declare `version()` (e.g. `"0.1.0"`) and `compatible_app_version()`. Plugins targeting all `0.x` releases should declare `"<1.0.0"` (or `"^0.2.0"` when targeting a specific minor release); avoid `"^0.0.0"`, which locks minor and patch versions under SemVer rules.
+6. **Profile-Scoped Vault Access:** When implementing OAuth token refresh or credential updates inside a plugin, resolve the active `profile_id` from `creds.get(vault::PROFILE_ID_KEY)` and call `vault::save_secret(profile_id, ...)` rather than writing un-namespaced keyring entries.
+7. **Graceful Errors:** Never use `.unwrap()` or `panic!()` inside `publish()`, `verify_credentials()`, or `start_oauth()`. Map HTTP status codes and API error bodies into clear, human-readable `Err(String)` messages.
+
+---
+
+## Plugin Versioning & Compatibility
+
+Every platform module declares its own semantic version (`version()`) and host compatibility constraint (`compatible_app_version()`). Follow these two rules in every pull request:
+
+1. **Always Bump `version()` on Plugin Changes:**
+   - Every pull request modifying a file in `src-tauri/src/platforms/` must increment that plugin's `version()` string:
+     - Patch bump (`0.1.x`) for endpoint fixes, credential or token-refresh fixes, or capability tweaks.
+     - Minor bump (`0.x.0`) for new authentication modes or major API version migrations.
+2. **Only Update `compatible_app_version()` When Core Requirements Change:**
+   - Do **not** bump `compatible_app_version()` simply because the main application incremented its version or because you fixed a platform-specific bug.
+   - Only raise the minimum version in `compatible_app_version()` when the plugin relies on new or modified `SocialPlatform` trait methods, `PlatformCapabilities` fields (such as `max_image_bytes`), `FieldKind` variants, or `core` helpers (`vault`, `oauth`, `media`) that did not exist in earlier app releases.
+   - Prefer open-ended `0.x` upper bounds such as `">=0.2.0, <1.0.0"` (or `"<1.0.0"` if no `0.2.0+` core fields are used) rather than caret ranges like `"^0.1.0"`, which artificially break valid plugins on every `0.x` minor release.
 
 ---
 
@@ -83,7 +99,7 @@ impl SocialPlatform for ExamplePlatform {
     }
 
     fn compatible_app_version(&self) -> &'static str {
-        "^0.1.0"
+        ">=0.2.0, <1.0.0"
     }
 
     fn authors(&self) -> Vec<PlatformAuthor> {
@@ -158,6 +174,7 @@ impl SocialPlatform for ExamplePlatform {
         PlatformCapabilities {
             max_chars: 500,
             max_images: 4,
+            max_image_bytes: Some(8_000_000),
             supports_video: false,
             requires_media: false,
         }
@@ -207,7 +224,7 @@ impl SocialPlatform for ExamplePlatform {
             .get("access_token")
             .ok_or_else(|| "Missing Access Token".to_string())?;
 
-        // 1. Upload media attachments first (if post.media is non-empty)
+        // 1. Read attachment bytes via `attachment.read_bytes().await?` and upload media first
         // 2. Submit the post payload via reqwest
         // 3. Parse the created post URL from the API response
         let _ = (token, post);
@@ -216,8 +233,9 @@ impl SocialPlatform for ExamplePlatform {
             platform_id: self.id().to_string(),
             platform_name: self.name().to_string(),
             success: true,
-            post_url: Some("[https://example.social/@user/12345](https://example.social/@user/12345)".to_string()),
+            post_url: Some("https://example.social/@user/12345".to_string()),
             error: None,
+            notes: Vec::new(),
         })
     }
 }

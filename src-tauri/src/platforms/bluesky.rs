@@ -110,11 +110,11 @@ impl SocialPlatform for BlueskyPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "1.0.0"
+        "0.1.1"
     }
 
     fn compatible_app_version(&self) -> &'static str {
-        "^0.1.0"
+        ">=0.2.0, <1.0.0"
     }
 
     fn authors(&self) -> Vec<PlatformAuthor> {
@@ -160,6 +160,7 @@ impl SocialPlatform for BlueskyPlatform {
         PlatformCapabilities {
             max_chars: 300,
             max_images: 4,
+            max_image_bytes: Some(976_562),
             supports_video: false,
             requires_media: false,
         }
@@ -188,12 +189,7 @@ impl SocialPlatform for BlueskyPlatform {
                 ));
             }
 
-            let bytes = tokio::fs::read(&attachment.path).await.map_err(|err| {
-                format!(
-                    "Failed to read attachment '{}': {err}",
-                    attachment.path.display()
-                )
-            })?;
+            let bytes = attachment.read_bytes().await?;
 
             let upload_res = client
                 .post(format!("{BSKY_PDS}/xrpc/com.atproto.repo.uploadBlob"))
@@ -277,6 +273,7 @@ impl SocialPlatform for BlueskyPlatform {
             success: true,
             post_url,
             error: None,
+            notes: Vec::new(),
         })
     }
 }

@@ -69,11 +69,11 @@ impl SocialPlatform for TumblrPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "1.0.0"
+        "0.1.1"
     }
 
     fn compatible_app_version(&self) -> &'static str {
-        "^0.1.0"
+        ">=0.2.0, <1.0.0"
     }
 
     fn authors(&self) -> Vec<PlatformAuthor> {
@@ -128,6 +128,7 @@ impl SocialPlatform for TumblrPlatform {
         PlatformCapabilities {
             max_chars: 4096,
             max_images: 10,
+            max_image_bytes: Some(10_000_000),
             supports_video: false,
             requires_media: false,
         }
@@ -188,12 +189,7 @@ impl SocialPlatform for TumblrPlatform {
                 ));
             }
 
-            let bytes = tokio::fs::read(&attachment.path).await.map_err(|err| {
-                format!(
-                    "Failed to read attachment '{}': {err}",
-                    attachment.path.display()
-                )
-            })?;
+            let bytes = attachment.read_bytes().await?;
 
             let filename = attachment
                 .path
@@ -284,6 +280,7 @@ impl SocialPlatform for TumblrPlatform {
             success: true,
             post_url,
             error: None,
+            notes: Vec::new(),
         })
     }
 }

@@ -128,4 +128,23 @@ mod tests {
                 .starts_with("Invalid compatibility constraint 'not-a-semver':")
         );
     }
+
+    #[test]
+    fn all_registered_platform_semver_constraints_parse_cleanly() {
+        for platform in all_platforms() {
+            let req_str = platform.compatible_app_version();
+            assert!(
+                VersionReq::parse(req_str).is_ok(),
+                "platform '{}' has invalid compatible_app_version '{}'",
+                platform.id(),
+                req_str
+            );
+            assert!(
+                Version::parse(platform.version()).is_ok(),
+                "platform '{}' has invalid version '{}'",
+                platform.id(),
+                platform.version()
+            );
+        }
+    }
 }

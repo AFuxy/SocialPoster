@@ -1,5 +1,5 @@
 use crate::core::platform::{MediaAttachment, PostOutcome, PostPayload};
-use crate::core::{registry, vault};
+use crate::core::{media, registry, vault};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -21,6 +21,7 @@ fn failure_outcome(platform_id: String, platform_name: String, error: String) ->
         success: false,
         post_url: None,
         error: Some(error),
+        notes: Vec::new(),
     }
 }
 
@@ -74,20 +75,59 @@ pub async fn dispatch_all(
             media: target.media,
         };
 
+        let max_image_bytes = platform.capabilities().max_image_bytes;
+
         set.spawn(async move {
-            match tokio::time::timeout(PLATFORM_PUBLISH_TIMEOUT, platform.publish(&payload, &creds))
-                .await
+            let raw_media = payload.media;
+            let prep_result = tokio::task::spawn_blocking(move || {
+                media::prepare_media_for_platform(&raw_media, max_image_bytes)
+            })
+            .await;
+
+            let (prepared_media, notes) = match prep_result {
+                Ok(Ok(pair)) => pair,
+                Ok(Err(err)) => return failure_outcome(platform_id, platform_name, err),
+                Err(err) => {
+                    return failure_outcome(
+                        platform_id,
+                        platform_name,
+                        format!("Media preparation task failed: {err}"),
+                    );
+                }
+            };
+
+            let prepared_payload = PostPayload {
+                text: payload.text,
+                media: prepared_media,
+            };
+
+            match tokio::time::timeout(
+                PLATFORM_PUBLISH_TIMEOUT,
+                platform.publish(&prepared_payload, &creds),
+            )
+            .await
             {
-                Ok(Ok(outcome)) => outcome,
-                Ok(Err(err)) => failure_outcome(platform_id, platform_name, err),
-                Err(_) => failure_outcome(
-                    platform_id,
-                    platform_name,
-                    format!(
-                        "Publish request timed out after {} seconds.",
-                        PLATFORM_PUBLISH_TIMEOUT.as_secs()
-                    ),
-                ),
+                Ok(Ok(mut outcome)) => {
+                    outcome.notes.extend(notes);
+                    outcome
+                }
+                Ok(Err(err)) => {
+                    let mut out = failure_outcome(platform_id, platform_name, err);
+                    out.notes = notes;
+                    out
+                }
+                Err(_) => {
+                    let mut out = failure_outcome(
+                        platform_id,
+                        platform_name,
+                        format!(
+                            "Publish request timed out after {} seconds.",
+                            PLATFORM_PUBLISH_TIMEOUT.as_secs()
+                        ),
+                    );
+                    out.notes = notes;
+                    out
+                }
             }
         });
     }

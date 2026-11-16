@@ -50,6 +50,7 @@ export interface AuthMode {
 export interface PlatformCapabilities {
   maxChars: number;
   maxImages: number;
+  maxImageBytes?: number | null;
   supportsVideo: boolean;
   requiresMedia: boolean;
 }
@@ -93,6 +94,7 @@ export interface PostOutcome {
   success: boolean;
   postUrl: string | null;
   error: string | null;
+  notes?: string[];
 }
 
 export interface HistoryEntry {

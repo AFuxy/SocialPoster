@@ -1,5 +1,6 @@
 pub mod dispatcher;
 pub mod history;
+pub mod media;
 pub mod oauth;
 pub mod platform;
 pub mod profiles;

@@ -72,11 +72,11 @@ impl SocialPlatform for MisskeyPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "1.0.0"
+        "0.1.1"
     }
 
     fn compatible_app_version(&self) -> &'static str {
-        "^0.1.0"
+        ">=0.2.0, <1.0.0"
     }
 
     fn authors(&self) -> Vec<PlatformAuthor> {
@@ -154,6 +154,7 @@ impl SocialPlatform for MisskeyPlatform {
         PlatformCapabilities {
             max_chars: 3000,
             max_images: 16,
+            max_image_bytes: Some(10_000_000),
             supports_video: true,
             requires_media: false,
         }
@@ -197,12 +198,7 @@ impl SocialPlatform for MisskeyPlatform {
         let mut file_ids: Vec<String> = Vec::new();
 
         for attachment in post.media.iter().take(16) {
-            let bytes = tokio::fs::read(&attachment.path).await.map_err(|err| {
-                format!(
-                    "Failed to read attachment '{}': {err}",
-                    attachment.path.display()
-                )
-            })?;
+            let bytes = attachment.read_bytes().await?;
 
             let filename = attachment
                 .path
@@ -293,6 +289,7 @@ impl SocialPlatform for MisskeyPlatform {
             success: true,
             post_url: Some(format!("{instance_url}/notes/{}", created.created_note.id)),
             error: None,
+            notes: Vec::new(),
         })
     }
 }

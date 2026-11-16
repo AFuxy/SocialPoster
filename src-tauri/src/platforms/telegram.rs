@@ -1,6 +1,6 @@
 use crate::core::platform::{
-    AuthField, AuthMode, AuthorLink, FieldKind, PlatformAuthor, PlatformCapabilities,
-    PlatformEntry, PostOutcome, PostPayload, SelectOption, SocialPlatform,
+    AuthField, AuthMode, AuthorLink, FieldKind, MediaAttachment, PlatformAuthor,
+    PlatformCapabilities, PlatformEntry, PostOutcome, PostPayload, SelectOption, SocialPlatform,
 };
 use async_trait::async_trait;
 use reqwest::multipart::{Form, Part};
@@ -50,15 +50,11 @@ fn build_post_url(msg: &TelegramMessage) -> Option<String> {
         .map(|username| format!("https://t.me/{username}/{}", msg.message_id))
 }
 
-async fn read_attachment_part(
-    path: &std::path::Path,
-    mime_type: &str,
-) -> Result<Part, String> {
-    let bytes = tokio::fs::read(path)
-        .await
-        .map_err(|err| format!("Failed to read attachment '{}': {err}", path.display()))?;
+async fn read_attachment_part(attachment: &MediaAttachment) -> Result<Part, String> {
+    let bytes = attachment.read_bytes().await?;
 
-    let filename = path
+    let filename = attachment
+        .path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("attachment")
@@ -66,8 +62,8 @@ async fn read_attachment_part(
 
     Part::bytes(bytes)
         .file_name(filename)
-        .mime_str(mime_type)
-        .map_err(|err| format!("Invalid media MIME type '{mime_type}': {err}"))
+        .mime_str(&attachment.mime_type)
+        .map_err(|err| format!("Invalid media MIME type '{}': {err}", attachment.mime_type))
 }
 
 #[async_trait]
@@ -85,11 +81,11 @@ impl SocialPlatform for TelegramPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "1.0.0"
+        "0.1.1"
     }
 
     fn compatible_app_version(&self) -> &'static str {
-        "^0.1.0"
+        ">=0.2.0, <1.0.0"
     }
 
     fn authors(&self) -> Vec<PlatformAuthor> {
@@ -163,6 +159,7 @@ impl SocialPlatform for TelegramPlatform {
         PlatformCapabilities {
             max_chars: 4096,
             max_images: 10,
+            max_image_bytes: Some(10_000_000),
             supports_video: true,
             requires_media: false,
         }
@@ -275,7 +272,7 @@ impl SocialPlatform for TelegramPlatform {
                 ("sendPhoto", "photo")
             };
 
-            let file_part = read_attachment_part(&attachment.path, &attachment.mime_type).await?;
+            let file_part = read_attachment_part(attachment).await?;
             let mut form = Form::new()
                 .text("chat_id", chat_id.to_string())
                 .text("disable_notification", disable_notification.to_string())
@@ -316,8 +313,7 @@ impl SocialPlatform for TelegramPlatform {
             let mut media_items: Vec<Value> = Vec::new();
             for (idx, attachment) in post.media.iter().take(10).enumerate() {
                 let attach_key = format!("file{idx}");
-                let file_part =
-                    read_attachment_part(&attachment.path, &attachment.mime_type).await?;
+                let file_part = read_attachment_part(attachment).await?;
                 form = form.part(attach_key.clone(), file_part);
 
                 let media_type = if attachment.mime_type.starts_with("video/") {
@@ -373,6 +369,7 @@ impl SocialPlatform for TelegramPlatform {
             success: true,
             post_url,
             error: None,
+            notes: Vec::new(),
         })
     }
 }

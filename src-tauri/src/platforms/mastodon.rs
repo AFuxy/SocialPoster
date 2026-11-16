@@ -79,11 +79,11 @@ impl SocialPlatform for MastodonPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "1.0.0"
+        "0.1.1"
     }
 
     fn compatible_app_version(&self) -> &'static str {
-        "^0.1.0"
+        ">=0.2.0, <1.0.0"
     }
 
     fn authors(&self) -> Vec<PlatformAuthor> {
@@ -173,6 +173,7 @@ impl SocialPlatform for MastodonPlatform {
         PlatformCapabilities {
             max_chars: 500,
             max_images: 4,
+            max_image_bytes: Some(8_000_000),
             supports_video: true,
             requires_media: false,
         }
@@ -299,12 +300,7 @@ impl SocialPlatform for MastodonPlatform {
 
         let mut media_ids: Vec<String> = Vec::new();
         for attachment in post.media.iter().take(4) {
-            let bytes = tokio::fs::read(&attachment.path).await.map_err(|err| {
-                format!(
-                    "Failed to read attachment '{}': {err}",
-                    attachment.path.display()
-                )
-            })?;
+            let bytes = attachment.read_bytes().await?;
 
             let filename = attachment
                 .path
@@ -385,6 +381,7 @@ impl SocialPlatform for MastodonPlatform {
             success: true,
             post_url: created.url.or(created.uri),
             error: None,
+            notes: Vec::new(),
         })
     }
 }
