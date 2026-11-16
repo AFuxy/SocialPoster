@@ -787,8 +787,8 @@ function SocialPosterApp() {
   const isLocked = Boolean(activeProfile && !activeProfile.isUnlocked);
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="relative z-40 border-b bg-card/60 backdrop-blur-xs">
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <header className="relative z-40 w-full shrink-0 border-b bg-card/60 backdrop-blur-xs">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-2 px-4 py-3.5 sm:px-6">
           <div className="flex items-center gap-2.5">
             <AppLogo className="h-8 w-8 shrink-0" />
@@ -919,50 +919,55 @@ function SocialPosterApp() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl space-y-5 px-4 py-6 sm:px-6">
-        {isLoading ? (
-          <div className="rounded-xl border bg-card p-10 text-center text-sm text-muted-foreground">
-            Loading...
+      <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+        <div className="box-border w-screen">
+          <div className="mx-auto max-w-4xl space-y-5 px-4 py-6 sm:px-6">
+            {isLoading ? (
+              <div className="rounded-xl border bg-card p-10 text-center text-sm text-muted-foreground">
+                Loading...
+              </div>
+            ) : isLocked && activeProfile ? (
+              <UnlockProfileCard
+                profile={activeProfile}
+                onUnlock={handleUnlockProfile}
+              />
+            ) : (
+              <>
+                <PlatformBar
+                  platforms={platforms}
+                  enabledIds={enabledIds}
+                  onToggle={handleToggle}
+                  onSelectAll={handleSelectAll}
+                  onClearAll={handleClearAll}
+                  onOpenSettings={(platform) => setSettingsPlatform(platform)}
+                />
+
+                <Composer
+                  profileId={activeProfile?.id ?? "default"}
+                  platforms={platforms}
+                  enabledIds={enabledIds}
+                  draft={draft}
+                  onDraftChange={setDraft}
+                  draftRestored={draftRestored}
+                  onClearDraft={handleClearDraft}
+                  autoThread={autoThread}
+                  onAutoThreadChange={(enabled) => {
+                    setAutoThread(enabled);
+                    if (activeProfile) {
+                      saveAutoThread(activeProfile.id, enabled);
+                    }
+                  }}
+                  isPosting={isPosting}
+                  onBroadcast={handleBroadcast}
+                  onSchedule={handleSchedulePost}
+                  onOpenSettings={(platform) => setSettingsPlatform(platform)}
+                />
+
+                <DispatchResults outcomes={outcomes} />
+              </>
+            )}
           </div>
-        ) : isLocked && activeProfile ? (
-          <UnlockProfileCard
-            profile={activeProfile}
-            onUnlock={handleUnlockProfile}
-          />
-        ) : (
-          <>
-            <PlatformBar
-              platforms={platforms}
-              enabledIds={enabledIds}
-              onToggle={handleToggle}
-              onSelectAll={handleSelectAll}
-              onClearAll={handleClearAll}
-              onOpenSettings={(platform) => setSettingsPlatform(platform)}
-            />
-
-            <Composer
-              platforms={platforms}
-              enabledIds={enabledIds}
-              draft={draft}
-              onDraftChange={setDraft}
-              draftRestored={draftRestored}
-              onClearDraft={handleClearDraft}
-              autoThread={autoThread}
-              onAutoThreadChange={(enabled) => {
-                setAutoThread(enabled);
-                if (activeProfile) {
-                  saveAutoThread(activeProfile.id, enabled);
-                }
-              }}
-              isPosting={isPosting}
-              onBroadcast={handleBroadcast}
-              onSchedule={handleSchedulePost}
-              onOpenSettings={(platform) => setSettingsPlatform(platform)}
-            />
-
-            <DispatchResults outcomes={outcomes} />
-          </>
-        )}
+        </div>
       </main>
 
       <Suspense fallback={null}>

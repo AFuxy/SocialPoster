@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { SnippetsPopover } from "@/components/SnippetsPopover";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,7 @@ import type {
 } from "@/lib/tauri";
 
 interface ComposerProps {
+  profileId: string;
   platforms: PlatformMetadata[];
   enabledIds: Set<string>;
   draft: ComposerDraft;
@@ -103,6 +105,7 @@ function fileBasename(filePath: string): string {
 }
 
 export function Composer({
+  profileId,
   platforms,
   enabledIds,
   draft,
@@ -121,6 +124,74 @@ export function Composer({
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduledLocal, setScheduledLocal] = useState("");
   const masterTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const overrideTextareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const selectionRef = useRef<{ target: string; start: number; end: number }>({
+    target: "master",
+    start: 0,
+    end: 0,
+  });
+
+  const recordSelection = useCallback(
+    (target: string, el: HTMLTextAreaElement) => {
+      selectionRef.current = {
+        target,
+        start: el.selectionStart ?? el.value.length,
+        end: el.selectionEnd ?? el.value.length,
+      };
+    },
+    [],
+  );
+
+  const handleInsertSnippet = useCallback(
+    (content: string) => {
+      const target = activeTab;
+      const currentText =
+        target === "master"
+          ? masterText
+          : (overrides[target] ?? masterText);
+
+      const hasMatchingSelection = selectionRef.current.target === target;
+      const rawStart = hasMatchingSelection
+        ? selectionRef.current.start
+        : currentText.length;
+      const rawEnd = hasMatchingSelection
+        ? selectionRef.current.end
+        : currentText.length;
+      const start = Math.max(0, Math.min(rawStart, currentText.length));
+      const end = Math.max(start, Math.min(rawEnd, currentText.length));
+
+      const needsLeadingSpace =
+        start > 0 && !/\s/.test(currentText.slice(start - 1, start));
+      const insertion = needsLeadingSpace ? ` ${content}` : content;
+      const nextText =
+        currentText.slice(0, start) + insertion + currentText.slice(end);
+      const nextCaret = start + insertion.length;
+
+      if (target === "master") {
+        onDraftChange((prev) => ({ ...prev, masterText: nextText }));
+      } else {
+        onDraftChange((prev) => ({
+          ...prev,
+          overrides: {
+            ...prev.overrides,
+            [target]: nextText,
+          },
+        }));
+      }
+
+      selectionRef.current = { target, start: nextCaret, end: nextCaret };
+      requestAnimationFrame(() => {
+        const el =
+          target === "master"
+            ? masterTextareaRef.current
+            : overrideTextareaRefs.current[target];
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(nextCaret, nextCaret);
+      });
+    },
+    [activeTab, masterText, onDraftChange, overrides],
+  );
 
   useEffect(() => {
     let active = true;
@@ -429,8 +500,13 @@ export function Composer({
             value={masterText}
             onChange={(e) => {
               const value = e.target.value;
+              recordSelection("master", e.currentTarget);
               onDraftChange((prev) => ({ ...prev, masterText: value }));
             }}
+            onFocus={(e) => recordSelection("master", e.currentTarget)}
+            onClick={(e) => recordSelection("master", e.currentTarget)}
+            onKeyUp={(e) => recordSelection("master", e.currentTarget)}
+            onSelect={(e) => recordSelection("master", e.currentTarget)}
             placeholder="Write your post, or drop media here..."
             rows={6}
             className="min-h-[150px] resize-y text-sm leading-relaxed"
@@ -474,9 +550,13 @@ export function Composer({
                 )}
               </div>
               <Textarea
+                ref={(el) => {
+                  overrideTextareaRefs.current[platform.id] = el;
+                }}
                 value={value}
                 onChange={(e) => {
                   const nextValue = e.target.value;
+                  recordSelection(platform.id, e.currentTarget);
                   onDraftChange((prev) => ({
                     ...prev,
                     overrides: {
@@ -485,6 +565,10 @@ export function Composer({
                     },
                   }));
                 }}
+                onFocus={(e) => recordSelection(platform.id, e.currentTarget)}
+                onClick={(e) => recordSelection(platform.id, e.currentTarget)}
+                onKeyUp={(e) => recordSelection(platform.id, e.currentTarget)}
+                onSelect={(e) => recordSelection(platform.id, e.currentTarget)}
                 placeholder={`Custom post text for ${platform.name}...`}
                 rows={6}
                 className="min-h-[150px] resize-y text-sm leading-relaxed"
@@ -734,6 +818,12 @@ export function Composer({
             />
             <span>Auto-thread</span>
           </button>
+
+          <SnippetsPopover
+            profileId={profileId}
+            disabled={isPosting}
+            onInsert={handleInsertSnippet}
+          />
 
           {scheduleOpen ? (
             <div className="flex h-8 shrink-0 items-center overflow-hidden rounded-md border border-border bg-background">

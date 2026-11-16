@@ -26,6 +26,10 @@ export function autoThreadKey(profileId: string): string {
   return `universal-poster:${profileId}:auto-thread`;
 }
 
+export function snippetsKey(profileId: string): string {
+  return `universal-poster:${profileId}:snippets`;
+}
+
 export function loadAutoThread(profileId: string): boolean {
   try {
     return localStorage.getItem(autoThreadKey(profileId)) === "true";
@@ -195,6 +199,7 @@ export function clearProfileStorage(profileId: string): void {
     localStorage.removeItem(draftKey(profileId));
     localStorage.removeItem(overridesKey(profileId));
     localStorage.removeItem(autoThreadKey(profileId));
+    localStorage.removeItem(snippetsKey(profileId));
   } catch {
     // Ignore storage errors.
   }
