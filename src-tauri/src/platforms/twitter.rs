@@ -152,12 +152,19 @@ async fn refresh_access_token(
         creds.insert("refresh_token".to_string(), rt.clone());
     }
 
+    let profile_id = creds
+        .get(vault::PROFILE_ID_KEY)
+        .map(String::as_str)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("default")
+        .to_string();
+
     let access_to_save = new_access.clone();
     let refresh_to_save = new_refresh.clone();
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        vault::save_secret("twitter", "access_token", &access_to_save)?;
+        vault::save_secret(&profile_id, "twitter", "access_token", &access_to_save)?;
         if let Some(rt) = refresh_to_save {
-            vault::save_secret("twitter", "refresh_token", &rt)?;
+            vault::save_secret(&profile_id, "twitter", "refresh_token", &rt)?;
         }
         Ok(())
     })

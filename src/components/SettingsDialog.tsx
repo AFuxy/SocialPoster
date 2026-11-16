@@ -34,6 +34,7 @@ import {
 } from "@/lib/tauri";
 
 interface SettingsDialogProps {
+  profileId: string;
   platform: PlatformMetadata | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -42,6 +43,7 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({
+  profileId,
   platform,
   open,
   onOpenChange,
@@ -117,7 +119,7 @@ export function SettingsDialog({
     setIsSaving(true);
     setVerifyStatus(null);
     try {
-      await saveCredentials(platform.id, activeMode.id, values);
+      await saveCredentials(profileId, platform.id, activeMode.id, values);
       await onSaved();
       toast.success(`Saved credentials for ${platform.name}.`);
     } catch (err) {
@@ -134,10 +136,10 @@ export function SettingsDialog({
     try {
       const hasAnyInput = Object.values(values).some((v) => v.trim().length > 0);
       if (hasAnyInput) {
-        await saveCredentials(platform.id, activeMode.id, values);
+        await saveCredentials(profileId, platform.id, activeMode.id, values);
         await onSaved();
       }
-      await verifyPlatform(platform.id);
+      await verifyPlatform(profileId, platform.id);
       setVerifyStatus({
         ok: true,
         message: "Connection verified successfully.",
@@ -157,7 +159,7 @@ export function SettingsDialog({
     setIsAuthorising(true);
     setVerifyStatus(null);
     try {
-      await startPlatformOauth(platform.id, activeMode.id, values);
+      await startPlatformOauth(profileId, platform.id, activeMode.id, values);
       await onSaved();
       setVerifyStatus({
         ok: true,
@@ -182,7 +184,7 @@ export function SettingsDialog({
     setIsUnlinking(true);
     setVerifyStatus(null);
     try {
-      await unlinkPlatform(platform.id);
+      await unlinkPlatform(profileId, platform.id);
       setValues({});
       setRevealed({});
       setConfirmUnlink(false);

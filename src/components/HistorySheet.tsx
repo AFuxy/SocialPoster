@@ -19,7 +19,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import type { HistoryEntry } from "@/lib/storage";
+import type { HistoryEntry } from "@/lib/tauri";
 
 interface HistorySheetProps {
   entries: HistoryEntry[];

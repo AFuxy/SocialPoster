@@ -27,7 +27,10 @@ fn failure_outcome(platform_id: String, platform_name: String, error: String) ->
 /// Dispatches posts concurrently across all requested platforms using `JoinSet`.
 /// Each platform runs in an isolated task with its own timeout; a failure, timeout,
 /// or panic in one platform never cancels or panics sibling tasks.
-pub async fn dispatch_all(targets: Vec<PlatformDispatchRequest>) -> Vec<PostOutcome> {
+pub async fn dispatch_all(
+    profile_id: &str,
+    targets: Vec<PlatformDispatchRequest>,
+) -> Vec<PostOutcome> {
     let mut set: JoinSet<PostOutcome> = JoinSet::new();
     let mut outcomes: Vec<PostOutcome> = Vec::with_capacity(targets.len());
 
@@ -58,7 +61,7 @@ pub async fn dispatch_all(targets: Vec<PlatformDispatchRequest>) -> Vec<PostOutc
 
         let auth_modes = platform.auth_modes();
 
-        let creds = match vault::load_platform_credentials(&platform_id, &auth_modes) {
+        let creds = match vault::load_platform_credentials(profile_id, &platform_id, &auth_modes) {
             Ok(creds) => creds,
             Err(err) => {
                 outcomes.push(failure_outcome(platform_id, platform_name, err));
