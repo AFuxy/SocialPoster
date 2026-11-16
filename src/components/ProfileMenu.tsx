@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
+  Download,
   KeyRound,
   Lock,
   Pencil,
   Plus,
   Trash2,
+  Upload,
   User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -35,6 +37,8 @@ interface ProfileMenuProps {
     newPassword: string | null,
   ) => Promise<void>;
   onDeleteProfile: (profileId: string) => Promise<void>;
+  onExportProfile: () => void;
+  onImportProfile: () => void;
 }
 
 export function ProfileMenu({
@@ -46,6 +50,8 @@ export function ProfileMenu({
   onRenameProfile,
   onSetProfilePassword,
   onDeleteProfile,
+  onExportProfile,
+  onImportProfile,
 }: ProfileMenuProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -202,6 +208,31 @@ export function ProfileMenu({
             >
               <Plus className="size-3.5" />
               <span>Add Profile</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={!activeProfile || !activeProfile.isUnlocked}
+              onClick={() => {
+                setMenuOpen(false);
+                onExportProfile();
+              }}
+              className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download className="size-3.5" />
+              <span>Export Profile</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                onImportProfile();
+              }}
+              className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <Upload className="size-3.5" />
+              <span>Import Profile</span>
             </button>
 
             {canLock && activeProfile && (

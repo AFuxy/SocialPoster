@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod desktop;
 pub mod dispatcher;
 pub mod history;

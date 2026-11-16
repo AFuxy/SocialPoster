@@ -335,3 +335,48 @@ export async function retryScheduledPost(
 ): Promise<ScheduledPost> {
   return invoke<ScheduledPost>("retry_scheduled_post", { profileId, jobId });
 }
+
+export interface BackupMetadata {
+  profileName: string;
+  exportedAt: string;
+  version: number;
+}
+
+export interface ImportedProfileResponse {
+  profile: ProfileInfo;
+  frontendState: Record<string, string>;
+  restoredPlatformsCount: number;
+  restoredHistoryCount: number;
+}
+
+export async function exportProfileBackup(
+  profileId: string,
+  filePath: string,
+  passphrase: string,
+  frontendState: Record<string, string>,
+): Promise<void> {
+  return invoke<void>("export_profile_backup", {
+    profileId,
+    filePath,
+    passphrase,
+    frontendState,
+  });
+}
+
+export async function inspectProfileBackup(
+  filePath: string,
+): Promise<BackupMetadata> {
+  return invoke<BackupMetadata>("inspect_profile_backup", { filePath });
+}
+
+export async function importProfileBackup(
+  filePath: string,
+  passphrase: string,
+  customName: string | null,
+): Promise<ImportedProfileResponse> {
+  return invoke<ImportedProfileResponse>("import_profile_backup", {
+    filePath,
+    passphrase,
+    customName,
+  });
+}

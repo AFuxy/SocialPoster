@@ -1,3 +1,4 @@
+use crate::core::backup::{self, BackupMetadata, BackupPayload, ImportedProfileResponse};
 use crate::core::desktop::{self, DesktopSettings, DesktopSettingsState};
 use crate::core::dispatcher::{self, PlatformDispatchRequest};
 use crate::core::history::{self, HistoryEntry};
@@ -548,4 +549,140 @@ pub async fn retry_scheduled_post(
 ) -> Result<ScheduledPost, String> {
     profiles::ensure_profile_unlocked(&app, &state, &profile_id)?;
     scheduler::retry_job(&app, &profile_id, &job_id)
+}
+
+#[tauri::command]
+pub async fn export_profile_backup(
+    app: AppHandle,
+    state: State<'_, ProfileSessionState>,
+    profile_id: String,
+    file_path: String,
+    passphrase: String,
+    frontend_state: HashMap<String, String>,
+) -> Result<(), String> {
+    if passphrase.trim().len() < 8 {
+        return Err("Passphrase must be at least 8 characters.".to_string());
+    }
+
+    profiles::ensure_profile_unlocked(&app, &state, &profile_id)?;
+    let all_profiles = profiles::ensure_initialized(&app)?;
+    let profile_name = all_profiles
+        .into_iter()
+        .find(|p| p.id == profile_id)
+        .map(|p| p.name)
+        .ok_or_else(|| format!("Unknown profile '{profile_id}'."))?;
+
+    let mut credentials: HashMap<String, HashMap<String, String>> = HashMap::new();
+    for platform in registry::all_platforms() {
+        let mut creds =
+            vault::load_platform_credentials(&profile_id, platform.id(), &platform.auth_modes())?;
+        creds.remove(vault::PROFILE_ID_KEY);
+        if !creds.is_empty() {
+            credentials.insert(platform.id().to_string(), creds);
+        }
+    }
+
+    let history = history::load_history(&app, &profile_id)?;
+    let payload = BackupPayload {
+        profile_name,
+        credentials,
+        history,
+        frontend_state,
+    };
+
+    let envelope = backup::encrypt_payload(&payload, &passphrase)?;
+    let json = serde_json::to_string_pretty(&envelope)
+        .map_err(|err| format!("Failed to serialise backup envelope: {err}"))?;
+    std::fs::write(&file_path, json).map_err(|err| format!("Failed to write backup file: {err}"))
+}
+
+#[tauri::command]
+pub async fn inspect_profile_backup(file_path: String) -> Result<BackupMetadata, String> {
+    let raw = std::fs::read_to_string(&file_path)
+        .map_err(|err| format!("Failed to read backup file: {err}"))?;
+    backup::inspect_envelope(&raw)
+}
+
+fn resolve_non_colliding_profile_name(existing_names: &[String], requested: &str) -> String {
+    let base = if requested.trim().is_empty() {
+        "Restored"
+    } else {
+        requested.trim()
+    };
+
+    if !existing_names
+        .iter()
+        .any(|name| name.eq_ignore_ascii_case(base))
+    {
+        return base.to_string();
+    }
+
+    let first_candidate = format!("{base} (Restored)");
+    if !existing_names
+        .iter()
+        .any(|name| name.eq_ignore_ascii_case(&first_candidate))
+    {
+        return first_candidate;
+    }
+
+    let mut suffix = 2usize;
+    loop {
+        let candidate = format!("{base} (Restored {suffix})");
+        if !existing_names
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(&candidate))
+        {
+            return candidate;
+        }
+        suffix += 1;
+    }
+}
+
+#[tauri::command]
+pub async fn import_profile_backup(
+    app: AppHandle,
+    state: State<'_, ProfileSessionState>,
+    file_path: String,
+    passphrase: String,
+    custom_name: Option<String>,
+) -> Result<ImportedProfileResponse, String> {
+    let raw = std::fs::read_to_string(&file_path)
+        .map_err(|err| format!("Failed to read backup file: {err}"))?;
+    let envelope = backup::parse_and_validate_envelope(&raw)?;
+    let payload = backup::decrypt_envelope(&envelope, &passphrase)?;
+
+    let existing_names: Vec<String> = profiles::ensure_initialized(&app)?
+        .into_iter()
+        .map(|p| p.name)
+        .collect();
+    let requested = custom_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&payload.profile_name);
+    let final_name = resolve_non_colliding_profile_name(&existing_names, requested);
+
+    let new_profile = profiles::create_profile(&app, &state, &final_name, None)?;
+    let restored_platforms_count = payload.credentials.len();
+    let restored_history_count = payload.history.len();
+
+    for (platform_id, creds_map) in &payload.credentials {
+        for (key, value) in creds_map {
+            if key == vault::PROFILE_ID_KEY {
+                continue;
+            }
+            vault::save_secret(&new_profile.id, platform_id, key, value)?;
+        }
+    }
+
+    if !payload.history.is_empty() {
+        history::save_history(&app, &new_profile.id, &payload.history)?;
+    }
+
+    Ok(ImportedProfileResponse {
+        profile: new_profile,
+        frontend_state: payload.frontend_state,
+        restored_platforms_count,
+        restored_history_count,
+    })
 }

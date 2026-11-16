@@ -81,6 +81,9 @@ pub fn run() {
             commands::cancel_scheduled_post,
             commands::publish_scheduled_now,
             commands::retry_scheduled_post,
+            commands::export_profile_backup,
+            commands::inspect_profile_backup,
+            commands::import_profile_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

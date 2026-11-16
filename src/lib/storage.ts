@@ -199,3 +199,38 @@ export function clearProfileStorage(profileId: string): void {
     // Ignore storage errors.
   }
 }
+
+export function exportProfileStorage(profileId: string): Record<string, string> {
+  const prefix = `universal-poster:${profileId}:`;
+  const result: Record<string, string> = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(prefix)) {
+        const val = localStorage.getItem(key);
+        if (val !== null) {
+          result[key.slice(prefix.length)] = val;
+        }
+      }
+    }
+  } catch {
+    // Ignore storage errors.
+  }
+  return result;
+}
+
+export function restoreProfileStorage(
+  profileId: string,
+  state: Record<string, string>,
+): void {
+  const prefix = `universal-poster:${profileId}:`;
+  try {
+    for (const [suffix, value] of Object.entries(state)) {
+      if (typeof value === "string") {
+        localStorage.setItem(`${prefix}${suffix}`, value);
+      }
+    }
+  } catch {
+    // Ignore storage errors.
+  }
+}

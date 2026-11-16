@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import { AddProfileDialog } from "@/components/AddProfileDialog";
 import { AppLogo } from "@/components/AppLogo";
+import { BackupDialog } from "@/components/BackupDialog";
 import { Composer } from "@/components/Composer";
 import { CreditsDialog } from "@/components/CreditsDialog";
 import { DispatchResults } from "@/components/DispatchResults";
@@ -169,6 +170,9 @@ function SocialPosterApp() {
     getActiveProfileId(),
   );
   const [addProfileOpen, setAddProfileOpen] = useState(false);
+  const [backupMode, setBackupMode] = useState<"export" | "import" | null>(
+    null,
+  );
 
   const [draft, setDraft] = useState<ComposerDraft>(EMPTY_DRAFT);
   const [draftRestored, setDraftRestored] = useState(false);
@@ -812,6 +816,8 @@ function SocialPosterApp() {
               onRenameProfile={handleRenameProfile}
               onSetProfilePassword={handleSetProfilePassword}
               onDeleteProfile={handleDeleteProfile}
+              onExportProfile={() => setBackupMode("export")}
+              onImportProfile={() => setBackupMode("import")}
             />
 
             <Button
@@ -983,6 +989,18 @@ function SocialPosterApp() {
         open={addProfileOpen}
         onOpenChange={setAddProfileOpen}
         onCreate={handleCreateProfile}
+      />
+
+      <BackupDialog
+        mode={backupMode}
+        activeProfile={activeProfile}
+        onClose={() => setBackupMode(null)}
+        onImported={async (result) => {
+          setActiveProfileId(result.profile.id);
+          setActiveProfileIdState(result.profile.id);
+          clearInMemoryProfileState();
+          await refreshProfilesAndActivate(result.profile.id);
+        }}
       />
 
       <Toaster position="bottom-right" richColors />
