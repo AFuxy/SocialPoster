@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Check, Crosshair, Settings2 } from "lucide-react";
+import { AlertTriangle, Check, Settings2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,6 @@ interface PlatformBarProps {
   platforms: PlatformMetadata[];
   enabledIds: Set<string>;
   onToggle: (platformId: string) => void;
-  onSolo: (platformId: string) => void;
   onSelectAll: () => void;
   onClearAll: () => void;
   onOpenSettings: (platform: PlatformMetadata) => void;
@@ -20,7 +19,6 @@ export function PlatformBar({
   platforms,
   enabledIds,
   onToggle,
-  onSolo,
   onSelectAll,
   onClearAll,
   onOpenSettings,
@@ -101,14 +99,10 @@ export function PlatformBar({
             const isConfigured = platform.isConfigured;
             const isEnabled =
               !isIncompatible && isConfigured && enabledIds.has(platform.id);
-            const isSolo = isEnabled && enabledIds.size === 1;
 
             return (
               <div
                 key={platform.id}
-                onDoubleClick={() => {
-                  if (!isIncompatible && isConfigured) onSolo(platform.id);
-                }}
                 style={
                   isEnabled
                     ? {
@@ -181,23 +175,6 @@ export function PlatformBar({
                   >
                     <AlertTriangle className="size-3" />
                     <span>Incompatible</span>
-                  </button>
-                )}
-
-                {!isIncompatible && isConfigured && (
-                  <button
-                    type="button"
-                    onClick={() => onSolo(platform.id)}
-                    title="Solo platform"
-                    aria-label={`Solo ${platform.name}`}
-                    className={cn(
-                      "inline-flex cursor-pointer items-center rounded p-1 transition-colors",
-                      isSolo
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground opacity-60 hover:bg-muted hover:text-foreground group-hover:opacity-100",
-                    )}
-                  >
-                    <Crosshair className="size-3" />
                   </button>
                 )}
 

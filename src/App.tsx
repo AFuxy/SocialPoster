@@ -507,16 +507,6 @@ function SocialPosterApp() {
     });
   };
 
-  const handleSolo = (platformId: string) => {
-    const target = platforms.find((p) => p.id === platformId);
-    if (!target || !target.isCompatible) return;
-    if (!target.isConfigured) {
-      setSettingsPlatform(target);
-      return;
-    }
-    updateEnabledIds(() => new Set([platformId]));
-  };
-
   const handleSelectAll = () => {
     updateEnabledIds(
       () =>
@@ -882,7 +872,6 @@ function SocialPosterApp() {
               platforms={platforms}
               enabledIds={enabledIds}
               onToggle={handleToggle}
-              onSolo={handleSolo}
               onSelectAll={handleSelectAll}
               onClearAll={handleClearAll}
               onOpenSettings={(platform) => setSettingsPlatform(platform)}
