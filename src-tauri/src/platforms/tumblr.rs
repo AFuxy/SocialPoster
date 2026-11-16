@@ -69,7 +69,7 @@ impl SocialPlatform for TumblrPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "0.1.1"
+        "0.1.3"
     }
 
     fn compatible_app_version(&self) -> &'static str {
@@ -132,6 +132,7 @@ impl SocialPlatform for TumblrPlatform {
             supports_video: false,
             requires_media: false,
             supports_threads: false,
+            supports_delete: true,
         }
     }
 
@@ -273,17 +274,45 @@ impl SocialPlatform for TumblrPlatform {
             })
         });
 
-        let post_url = post_id.map(|id| format!("https://{blog_identifier}/post/{id}"));
+        let post_url = post_id
+            .as_deref()
+            .map(|id| format!("https://{blog_identifier}/post/{id}"));
 
         Ok(PostOutcome {
             platform_id: self.id().to_string(),
             platform_name: self.name().to_string(),
             success: true,
-            post_id: None,
+            post_id,
             post_url,
-            error: None,
-            notes: Vec::new(),
+            ..Default::default()
         })
+    }
+
+    async fn delete_post(
+        &self,
+        creds: &HashMap<String, String>,
+        post_id: &str,
+    ) -> Result<(), String> {
+        let blog_identifier = normalise_blog_identifier(creds)?;
+        let token = require_token(creds)?;
+        let client = Client::new();
+
+        let res = client
+            .post(format!(
+                "https://api.tumblr.com/v2/blog/{blog_identifier}/post/delete"
+            ))
+            .bearer_auth(token)
+            .form(&[("id", post_id)])
+            .send()
+            .await
+            .map_err(|err| format!("Network error deleting Tumblr post: {err}"))?;
+
+        let status = res.status();
+        if status.is_success() || status.as_u16() == 404 {
+            return Ok(());
+        }
+        let body = res.text().await.unwrap_or_default();
+        Err(format!("Tumblr delete post failed (HTTP {status}): {body}"))
     }
 }
 

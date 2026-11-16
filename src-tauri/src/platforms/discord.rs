@@ -80,7 +80,7 @@ impl SocialPlatform for DiscordPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "0.1.1"
+        "0.1.3"
     }
 
     fn compatible_app_version(&self) -> &'static str {
@@ -184,6 +184,7 @@ impl SocialPlatform for DiscordPlatform {
             supports_video: true,
             requires_media: false,
             supports_threads: false,
+            supports_delete: true,
         }
     }
 
@@ -315,28 +316,81 @@ impl SocialPlatform for DiscordPlatform {
             return Err(format!("Discord publish failed (HTTP {status}): {body}"));
         }
 
-        let post_url = res
-            .json::<DiscordMessageResponse>()
-            .await
-            .ok()
-            .and_then(|msg| {
-                msg.guild_id.map(|guild_id| {
-                    format!(
-                        "https://discord.com/channels/{guild_id}/{}/{}",
-                        msg.channel_id, msg.id
-                    )
-                })
-            });
+        let parsed_msg = res.json::<DiscordMessageResponse>().await.ok();
+
+        let post_id = parsed_msg.as_ref().map(|msg| {
+            if mode == "bot" {
+                format!("{}/{}", msg.channel_id, msg.id)
+            } else {
+                format!("webhook:{}", msg.id)
+            }
+        });
+
+        let post_url = parsed_msg.and_then(|msg| {
+            msg.guild_id.map(|guild_id| {
+                format!(
+                    "https://discord.com/channels/{guild_id}/{}/{}",
+                    msg.channel_id, msg.id
+                )
+            })
+        });
 
         Ok(PostOutcome {
             platform_id: self.id().to_string(),
             platform_name: self.name().to_string(),
             success: true,
-            post_id: None,
+            post_id,
             post_url,
-            error: None,
-            notes: Vec::new(),
+            ..Default::default()
         })
+    }
+
+    async fn delete_post(
+        &self,
+        creds: &HashMap<String, String>,
+        post_id: &str,
+    ) -> Result<(), String> {
+        let client = Client::new();
+
+        let res = if let Some(webhook_msg_id) = post_id.strip_prefix("webhook:") {
+            let webhook_url = require_webhook_url(creds)?;
+            let (base_url, query_opt) = match webhook_url.split_once('?') {
+                Some((base, query)) => (base.trim_end_matches('/'), Some(query)),
+                None => (webhook_url.trim_end_matches('/'), None),
+            };
+            let thread_query = query_opt.and_then(|q| {
+                q.split('&').find(|kv| kv.starts_with("thread_id="))
+            });
+            let delete_url = match thread_query {
+                Some(tq) => format!("{base_url}/messages/{webhook_msg_id}?{tq}"),
+                None => format!("{base_url}/messages/{webhook_msg_id}"),
+            };
+
+            client
+                .delete(&delete_url)
+                .send()
+                .await
+                .map_err(|err| format!("Network error deleting Discord webhook message: {err}"))?
+        } else if let Some((channel_id, message_id)) = post_id.split_once('/') {
+            let bot_token = require_non_empty(creds, "bot_token", "Bot Token")?;
+            client
+                .delete(format!(
+                    "https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}"
+                ))
+                .header(reqwest::header::AUTHORIZATION, format!("Bot {bot_token}"))
+                .send()
+                .await
+                .map_err(|err| format!("Network error deleting Discord Bot message: {err}"))?
+        } else {
+            return Err(format!("Invalid Discord post ID '{post_id}'."));
+        };
+
+        let status = res.status();
+        if status.is_success() || status.as_u16() == 404 {
+            return Ok(());
+        }
+        let body = res.text().await.unwrap_or_default();
+        Err(format!("Discord delete message failed (HTTP {status}): {body}"))
     }
 }
 

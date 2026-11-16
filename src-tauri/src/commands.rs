@@ -313,6 +313,85 @@ pub async fn clear_history(
 }
 
 #[tauri::command]
+pub async fn recall_post(
+    app: AppHandle,
+    state: State<'_, ProfileSessionState>,
+    profile_id: String,
+    history_id: String,
+    platform_ids: Option<Vec<String>>,
+) -> Result<HistoryEntry, String> {
+    profiles::ensure_profile_unlocked(&app, &state, &profile_id)?;
+
+    let mut entries = history::load_history(&app, &profile_id)?;
+    let entry_idx = entries
+        .iter()
+        .position(|e| e.id == history_id)
+        .ok_or_else(|| "History entry not found.".to_string())?;
+
+    for outcome in &mut entries[entry_idx].outcomes {
+        if !outcome.success || outcome.recalled {
+            continue;
+        }
+        if let Some(ref filter_ids) = platform_ids
+            && !filter_ids.iter().any(|id| id == &outcome.platform_id)
+        {
+            continue;
+        }
+
+        let ids = history::outcome_post_ids(outcome);
+        if ids.is_empty() {
+            continue;
+        }
+
+        let Some(platform) = registry::find_platform(&outcome.platform_id) else {
+            outcome.recall_error = Some("Platform plugin is not registered.".to_string());
+            continue;
+        };
+
+        if !platform.capabilities().supports_delete {
+            outcome.recall_error =
+                Some("Post deletion is not supported by this platform.".to_string());
+            continue;
+        }
+
+        let creds = match vault::load_platform_credentials(
+            &profile_id,
+            &outcome.platform_id,
+            &platform.auth_modes(),
+        ) {
+            Ok(c) => c,
+            Err(err) => {
+                outcome.recall_error = Some(err);
+                continue;
+            }
+        };
+
+        let mut delete_err: Option<String> = None;
+        for id in ids.iter().rev() {
+            if let Err(err) = platform.delete_post(&creds, id).await {
+                delete_err = Some(err);
+                break;
+            }
+        }
+
+        match delete_err {
+            None => {
+                outcome.recalled = true;
+                outcome.recalled_at = Some(Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string());
+                outcome.recall_error = None;
+            }
+            Some(err) => {
+                outcome.recalled = false;
+                outcome.recall_error = Some(err);
+            }
+        }
+    }
+
+    history::save_history(&app, &profile_id, &entries)?;
+    Ok(entries[entry_idx].clone())
+}
+
+#[tauri::command]
 pub async fn get_desktop_settings(
     state: State<'_, DesktopSettingsState>,
 ) -> Result<DesktopSettings, String> {

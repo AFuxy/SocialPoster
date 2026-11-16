@@ -80,7 +80,7 @@ impl SocialPlatform for MastodonPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "0.1.2"
+        "0.1.3"
     }
 
     fn compatible_app_version(&self) -> &'static str {
@@ -178,6 +178,7 @@ impl SocialPlatform for MastodonPlatform {
             supports_video: true,
             requires_media: false,
             supports_threads: true,
+            supports_delete: true,
         }
     }
 
@@ -386,9 +387,37 @@ impl SocialPlatform for MastodonPlatform {
             success: true,
             post_id: Some(created.id),
             post_url: created.url.or(created.uri),
-            error: None,
-            notes: Vec::new(),
+            ..Default::default()
         })
+    }
+
+    async fn delete_post(
+        &self,
+        creds: &HashMap<String, String>,
+        post_id: &str,
+    ) -> Result<(), String> {
+        let instance_url = normalise_instance_url(creds.get("instance_url"))?;
+        let access_token = creds
+            .get("access_token")
+            .map(String::as_str)
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .ok_or_else(|| "Missing Mastodon Access Token.".to_string())?;
+
+        let client = Client::new();
+        let res = client
+            .delete(format!("{instance_url}/api/v1/statuses/{post_id}"))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(|err| format!("Network error deleting Mastodon status: {err}"))?;
+
+        let status = res.status();
+        if status.is_success() || status.as_u16() == 404 {
+            return Ok(());
+        }
+        let body = res.text().await.unwrap_or_default();
+        Err(format!("Mastodon delete status failed (HTTP {status}): {body}"))
     }
 }
 

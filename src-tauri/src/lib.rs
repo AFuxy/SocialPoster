@@ -73,6 +73,7 @@ pub fn run() {
             commands::broadcast_post,
             commands::get_history,
             commands::clear_history,
+            commands::recall_post,
             commands::get_desktop_settings,
             commands::update_desktop_settings,
             commands::schedule_post,

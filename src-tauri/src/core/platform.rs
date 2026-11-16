@@ -73,6 +73,8 @@ pub struct PlatformCapabilities {
     pub requires_media: bool,
     #[serde(default)]
     pub supports_threads: bool,
+    #[serde(default)]
+    pub supports_delete: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,7 +129,7 @@ pub struct PostPayload {
     pub reply_parent_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PostOutcome {
     pub platform_id: String,
@@ -135,10 +137,18 @@ pub struct PostOutcome {
     pub success: bool,
     #[serde(default)]
     pub post_id: Option<String>,
+    #[serde(default)]
+    pub post_ids: Vec<String>,
     pub post_url: Option<String>,
     pub error: Option<String>,
     #[serde(default)]
     pub notes: Vec<String>,
+    #[serde(default)]
+    pub recalled: bool,
+    #[serde(default)]
+    pub recalled_at: Option<String>,
+    #[serde(default)]
+    pub recall_error: Option<String>,
 }
 
 #[async_trait]
@@ -191,6 +201,14 @@ pub trait SocialPlatform: Send + Sync + 'static {
         post: &PostPayload,
         creds: &HashMap<String, String>,
     ) -> Result<PostOutcome, String>;
+
+    async fn delete_post(
+        &self,
+        _creds: &HashMap<String, String>,
+        _post_id: &str,
+    ) -> Result<(), String> {
+        Err("Post deletion is not supported by this platform.".into())
+    }
 }
 
 pub struct PlatformEntry {

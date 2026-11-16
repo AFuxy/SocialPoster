@@ -88,7 +88,7 @@ impl SocialPlatform for LinkedInPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "0.1.1"
+        "0.1.3"
     }
 
     fn compatible_app_version(&self) -> &'static str {
@@ -185,6 +185,7 @@ impl SocialPlatform for LinkedInPlatform {
             supports_video: false,
             requires_media: false,
             supports_threads: false,
+            supports_delete: true,
         }
     }
 
@@ -407,22 +408,52 @@ impl SocialPlatform for LinkedInPlatform {
             ));
         }
 
-        let post_url = publish_res
+        let post_id = publish_res
             .headers()
             .get("x-restli-id")
             .and_then(|v| v.to_str().ok())
+            .map(str::trim)
             .filter(|id| !id.is_empty())
+            .map(ToString::to_string);
+
+        let post_url = post_id
+            .as_deref()
             .map(|post_urn| format!("https://www.linkedin.com/feed/update/{post_urn}/"));
 
         Ok(PostOutcome {
             platform_id: self.id().to_string(),
             platform_name: self.name().to_string(),
             success: true,
-            post_id: None,
+            post_id,
             post_url,
-            error: None,
-            notes: Vec::new(),
+            ..Default::default()
         })
+    }
+
+    async fn delete_post(
+        &self,
+        creds: &HashMap<String, String>,
+        post_id: &str,
+    ) -> Result<(), String> {
+        let token = require_non_empty(creds, "access_token", "Access Token")?;
+        let encoded_urn: String = url::form_urlencoded::byte_serialize(post_id.as_bytes()).collect();
+        let client = Client::new();
+
+        let res = client
+            .delete(format!("https://api.linkedin.com/rest/posts/{encoded_urn}"))
+            .bearer_auth(token)
+            .header("LinkedIn-Version", LINKEDIN_API_VERSION)
+            .header("X-Restli-Protocol-Version", "2.0.0")
+            .send()
+            .await
+            .map_err(|err| format!("Network error deleting LinkedIn post: {err}"))?;
+
+        let status = res.status();
+        if status.is_success() || status.as_u16() == 404 {
+            return Ok(());
+        }
+        let body = res.text().await.unwrap_or_default();
+        Err(format!("LinkedIn delete post failed (HTTP {status}): {body}"))
     }
 }
 

@@ -54,6 +54,7 @@ export interface PlatformCapabilities {
   supportsVideo: boolean;
   requiresMedia: boolean;
   supportsThreads?: boolean;
+  supportsDelete?: boolean;
 }
 
 export interface PlatformMetadata {
@@ -94,9 +95,13 @@ export interface PostOutcome {
   platformName: string;
   success: boolean;
   postId?: string | null;
+  postIds?: string[];
   postUrl: string | null;
   error: string | null;
   notes?: string[];
+  recalled?: boolean;
+  recalledAt?: string | null;
+  recallError?: string | null;
 }
 
 export interface HistoryEntry {
@@ -260,6 +265,18 @@ export async function getHistory(profileId: string): Promise<HistoryEntry[]> {
 
 export async function clearHistory(profileId: string): Promise<void> {
   return invoke<void>("clear_history", { profileId });
+}
+
+export async function recallPost(
+  profileId: string,
+  historyId: string,
+  platformIds?: string[],
+): Promise<HistoryEntry> {
+  return invoke<HistoryEntry>("recall_post", {
+    profileId,
+    historyId,
+    platformIds: platformIds ?? null,
+  });
 }
 
 export async function getDesktopSettings(): Promise<DesktopSettings> {

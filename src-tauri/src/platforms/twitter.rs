@@ -258,7 +258,7 @@ impl SocialPlatform for TwitterPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "0.1.2"
+        "0.1.3"
     }
 
     fn compatible_app_version(&self) -> &'static str {
@@ -356,6 +356,7 @@ impl SocialPlatform for TwitterPlatform {
             supports_video: true,
             requires_media: false,
             supports_threads: true,
+            supports_delete: true,
         }
     }
 
@@ -650,9 +651,30 @@ impl SocialPlatform for TwitterPlatform {
             success: true,
             post_id: tweet_id,
             post_url,
-            error: None,
-            notes: Vec::new(),
+            ..Default::default()
         })
+    }
+
+    async fn delete_post(
+        &self,
+        creds: &HashMap<String, String>,
+        post_id: &str,
+    ) -> Result<(), String> {
+        let mut working_creds = creds.clone();
+        let client = Client::new();
+        let url = format!("https://api.x.com/2/tweets/{post_id}");
+
+        let res = send_with_auto_refresh(&client, &mut working_creds, |token| {
+            Ok(client.delete(&url).bearer_auth(token))
+        })
+        .await?;
+
+        let status = res.status();
+        if status.is_success() || status == StatusCode::NOT_FOUND {
+            return Ok(());
+        }
+        let body = res.text().await.unwrap_or_default();
+        Err(format!("X delete tweet failed (HTTP {status}): {body}"))
     }
 }
 

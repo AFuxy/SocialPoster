@@ -19,10 +19,8 @@ fn failure_outcome(platform_id: String, platform_name: String, error: String) ->
         platform_id,
         platform_name,
         success: false,
-        post_id: None,
-        post_url: None,
         error: Some(error),
-        notes: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -151,6 +149,7 @@ pub async fn dispatch_all(
                     };
 
                     let mut parent_id = root_id.clone();
+                    let mut thread_post_ids = vec![root_id.clone()];
 
                     for (idx, chunk_text) in chunk_iter.enumerate() {
                         let published_so_far = idx + 1;
@@ -170,6 +169,7 @@ pub async fn dispatch_all(
                         match reply_result {
                             Ok(Ok(next_outcome)) => {
                                 if let Some(next_id) = next_outcome.post_id {
+                                    thread_post_ids.push(next_id.clone());
                                     parent_id = next_id;
                                 }
                             }
@@ -182,6 +182,7 @@ pub async fn dispatch_all(
                                     ),
                                 );
                                 out.post_id = Some(root_id);
+                                out.post_ids = thread_post_ids;
                                 out.post_url = root_url;
                                 out.notes = notes;
                                 return out;
@@ -196,6 +197,7 @@ pub async fn dispatch_all(
                                     ),
                                 );
                                 out.post_id = Some(root_id);
+                                out.post_ids = thread_post_ids;
                                 out.post_url = root_url;
                                 out.notes = notes;
                                 return out;
@@ -209,9 +211,10 @@ pub async fn dispatch_all(
                         platform_name,
                         success: true,
                         post_id: Some(root_id),
+                        post_ids: thread_post_ids,
                         post_url: root_url,
-                        error: None,
                         notes,
+                        ..Default::default()
                     };
                 }
             }
@@ -230,6 +233,11 @@ pub async fn dispatch_all(
             .await
             {
                 Ok(Ok(mut outcome)) => {
+                    if outcome.post_ids.is_empty()
+                        && let Some(ref id) = outcome.post_id
+                    {
+                        outcome.post_ids = vec![id.clone()];
+                    }
                     outcome.notes.extend(notes);
                     outcome
                 }

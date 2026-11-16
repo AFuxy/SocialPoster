@@ -178,6 +178,7 @@ impl SocialPlatform for ExamplePlatform {
             supports_video: false,
             requires_media: false,
             supports_threads: true,
+            supports_delete: false,
         }
     }
 

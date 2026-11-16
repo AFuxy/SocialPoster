@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   CheckCircle2,
@@ -5,6 +6,7 @@ import {
   ExternalLink,
   History,
   Image as ImageIcon,
+  Loader2,
   RotateCcw,
   Trash2,
   XCircle,
@@ -18,14 +20,16 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import type { HistoryEntry } from "@/lib/tauri";
+import type { HistoryEntry, PlatformMetadata } from "@/lib/tauri";
 
 interface HistorySheetProps {
   entries: HistoryEntry[];
+  platforms: PlatformMetadata[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onLoadIntoComposer: (entry: HistoryEntry, onlyFailed?: boolean) => void;
   onClearHistory: () => void;
+  onRecallPost: (historyId: string) => Promise<void>;
 }
 
 function formatTimestamp(iso: string): string {
@@ -39,11 +43,35 @@ function formatTimestamp(iso: string): string {
 
 export function HistorySheet({
   entries,
+  platforms,
   open,
   onOpenChange,
   onLoadIntoComposer,
   onClearHistory,
+  onRecallPost,
 }: HistorySheetProps) {
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [recallingId, setRecallingId] = useState<string | null>(null);
+
+  const platformMap = useMemo(
+    () => new Map(platforms.map((p) => [p.id, p])),
+    [platforms],
+  );
+
+  useEffect(() => {
+    if (!confirmingId) return;
+    const timer = window.setTimeout(() => {
+      setConfirmingId(null);
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [confirmingId]);
+
+  useEffect(() => {
+    if (!open) {
+      setConfirmingId(null);
+    }
+  }, [open]);
+
   const handleOpenPost = async (url: string) => {
     if (!url.startsWith("https://") && !url.startsWith("http://")) return;
     try {
@@ -96,6 +124,20 @@ export function HistorySheet({
                 const hasFailures = entry.outcomes.some((o) => !o.success);
                 const hasSuccesses = entry.outcomes.some((o) => o.success);
                 const isPartialFailure = hasFailures && hasSuccesses;
+                const canRecall = entry.outcomes.some((o) => {
+                  if (!o.success || o.recalled) return false;
+                  const hasIds =
+                    (o.postIds?.length ?? 0) > 0 || Boolean(o.postId);
+                  const supportsDelete = Boolean(
+                    platformMap.get(o.platformId)?.capabilities.supportsDelete,
+                  );
+                  return hasIds && supportsDelete;
+                });
+                const recallErrors = entry.outcomes.filter((o) =>
+                  Boolean(o.recallError),
+                );
+                const isConfirming = confirmingId === entry.id;
+                const isRecalling = recallingId === entry.id;
                 const preview = entry.masterText.trim();
 
                 return (
@@ -133,7 +175,18 @@ export function HistorySheet({
 
                     <div className="flex flex-wrap gap-1.5">
                       {entry.outcomes.map((outcome) =>
-                        outcome.success ? (
+                        outcome.recalled ? (
+                          <Badge
+                            key={outcome.platformId}
+                            variant="outline"
+                            className="gap-1 border-border bg-muted/60 text-xs font-normal text-muted-foreground"
+                          >
+                            <span className="line-through">
+                              {outcome.platformName}
+                            </span>
+                            <span>Recalled</span>
+                          </Badge>
+                        ) : outcome.success ? (
                           outcome.postUrl ? (
                             <button
                               key={outcome.platformId}
@@ -179,6 +232,19 @@ export function HistorySheet({
                       )}
                     </div>
 
+                    {recallErrors.length > 0 && (
+                      <div className="space-y-1">
+                        {recallErrors.map((outcome) => (
+                          <p
+                            key={`${outcome.platformId}-recall-err`}
+                            className="text-xs break-words [overflow-wrap:anywhere] text-destructive"
+                          >
+                            {outcome.platformName}: {outcome.recallError}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+
                     <div className="flex flex-wrap items-center gap-2 border-t pt-2.5">
                       <Button
                         type="button"
@@ -200,6 +266,38 @@ export function HistorySheet({
                           onClick={() => onLoadIntoComposer(entry, true)}
                         >
                           Retry Failed Only
+                        </Button>
+                      )}
+
+                      {canRecall && (
+                        <Button
+                          type="button"
+                          variant={isConfirming ? "destructive" : "outline"}
+                          size="sm"
+                          className="ml-auto h-7 px-2.5 text-xs"
+                          disabled={isRecalling}
+                          onClick={() => {
+                            if (!isConfirming) {
+                              setConfirmingId(entry.id);
+                              return;
+                            }
+                            setConfirmingId(null);
+                            setRecallingId(entry.id);
+                            void onRecallPost(entry.id).finally(() =>
+                              setRecallingId(null),
+                            );
+                          }}
+                        >
+                          {isRecalling ? (
+                            <Loader2 className="mr-1.5 size-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="mr-1.5 size-3" />
+                          )}
+                          {isRecalling
+                            ? "Recalling..."
+                            : isConfirming
+                              ? "Confirm Recall?"
+                              : "Recall"}
                         </Button>
                       )}
                     </div>

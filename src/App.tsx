@@ -54,6 +54,7 @@ import {
   listScheduledPosts,
   lockProfile,
   publishScheduledNow,
+  recallPost,
   renameProfile,
   retryScheduledPost,
   schedulePost,
@@ -613,6 +614,25 @@ function SocialPosterApp() {
     }
   };
 
+  const handleRecallPost = async (historyId: string) => {
+    if (!activeProfile) return;
+    const profileId = activeProfile.id;
+    try {
+      const updated = await recallPost(profileId, historyId);
+      setHistory((prev) =>
+        prev.map((entry) => (entry.id === updated.id ? updated : entry)),
+      );
+      const hasErrors = updated.outcomes.some((o) => Boolean(o.recallError));
+      if (hasErrors) {
+        toast.warning("Some platforms failed to recall.");
+      } else {
+        toast.success("Post recalled.");
+      }
+    } catch (err) {
+      toast.error(`Failed to recall post: ${String(err)}`);
+    }
+  };
+
   useEffect(() => {
     if (!activeProfile || !activeProfile.isUnlocked) return;
     const profileId = activeProfile.id;
@@ -929,10 +949,12 @@ function SocialPosterApp() {
 
           <HistorySheet
             entries={history}
+            platforms={platforms}
             open={historyOpen}
             onOpenChange={setHistoryOpen}
             onLoadIntoComposer={handleLoadFromHistory}
             onClearHistory={() => void handleClearHistory()}
+            onRecallPost={handleRecallPost}
           />
 
           <QueueDialog
