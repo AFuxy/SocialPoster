@@ -205,6 +205,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].mime_type, "image/jpeg");
         assert_eq!(result[0].path, PathBuf::from("photo.jpg"));
+        assert_eq!(result[0].alt_text.as_deref(), Some("Test photo"));
         let compressed_bytes = result[0].bytes.as_ref().expect("compressed bytes present");
         assert!(
             compressed_bytes.len() <= 976_562,

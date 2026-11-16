@@ -65,6 +65,45 @@ async fn attach_files_to_form(
     Ok(form)
 }
 
+fn build_attachments_metadata(media: &[MediaAttachment]) -> Option<Vec<Value>> {
+    let has_alt = media.iter().any(|m| {
+        m.alt_text
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|s| !s.is_empty())
+    });
+    if !has_alt {
+        return None;
+    }
+
+    let items = media
+        .iter()
+        .take(10)
+        .enumerate()
+        .map(|(idx, attachment)| {
+            let filename = attachment
+                .path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("attachment");
+            let mut obj = Map::new();
+            obj.insert("id".to_string(), json!(idx));
+            obj.insert("filename".to_string(), Value::String(filename.to_string()));
+            if let Some(alt) = attachment
+                .alt_text
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                obj.insert("description".to_string(), Value::String(alt.to_string()));
+            }
+            Value::Object(obj)
+        })
+        .collect();
+
+    Some(items)
+}
+
 #[async_trait]
 impl SocialPlatform for DiscordPlatform {
     fn id(&self) -> &'static str {
@@ -80,7 +119,7 @@ impl SocialPlatform for DiscordPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "0.1.3"
+        "0.1.4"
     }
 
     fn compatible_app_version(&self) -> &'static str {
@@ -253,7 +292,12 @@ impl SocialPlatform for DiscordPlatform {
                     .await
                     .map_err(|err| format!("Failed to send Discord Bot message: {err}"))?
             } else {
-                let payload_json = json!({ "content": post.text }).to_string();
+                let mut body_obj = Map::new();
+                body_obj.insert("content".to_string(), Value::String(post.text.clone()));
+                if let Some(attachments) = build_attachments_metadata(&post.media) {
+                    body_obj.insert("attachments".to_string(), Value::Array(attachments));
+                }
+                let payload_json = Value::Object(body_obj).to_string();
                 let form = attach_files_to_form(
                     Form::new().text("payload_json", payload_json),
                     &post.media,
@@ -293,6 +337,9 @@ impl SocialPlatform for DiscordPlatform {
                 .filter(|s| !s.is_empty())
             {
                 body_obj.insert("avatar_url".to_string(), Value::String(avatar_url.to_string()));
+            }
+            if let Some(attachments) = build_attachments_metadata(&post.media) {
+                body_obj.insert("attachments".to_string(), Value::Array(attachments));
             }
 
             let payload_json = Value::Object(body_obj).to_string();

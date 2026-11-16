@@ -100,6 +100,7 @@ pub struct PlatformMetadata {
 pub struct MediaAttachment {
     pub path: PathBuf,
     pub mime_type: String,
+    #[serde(default)]
     pub alt_text: Option<String>,
     #[serde(skip)]
     pub bytes: Option<Vec<u8>>,

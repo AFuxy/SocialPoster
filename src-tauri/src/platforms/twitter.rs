@@ -258,7 +258,7 @@ impl SocialPlatform for TwitterPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "0.1.3"
+        "0.1.4"
     }
 
     fn compatible_app_version(&self) -> &'static str {
@@ -601,6 +601,33 @@ impl SocialPlatform for TwitterPlatform {
                             info = next_info;
                         }
                     }
+                }
+            }
+
+            if let Some(alt) = attachment
+                .alt_text
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                let meta_body = json!({
+                    "media_id": media_id,
+                    "alt_text": { "text": alt },
+                });
+                let meta_res = send_with_auto_refresh(&client, &mut working_creds, |token| {
+                    Ok(client
+                        .post("https://upload.twitter.com/1.1/media/metadata/create.json")
+                        .bearer_auth(token)
+                        .json(&meta_body))
+                })
+                .await?;
+
+                let meta_status = meta_res.status();
+                if !meta_status.is_success() {
+                    let body = meta_res.text().await.unwrap_or_default();
+                    return Err(format!(
+                        "X media alt-text metadata failed (HTTP {meta_status}): {body}"
+                    ));
                 }
             }
 

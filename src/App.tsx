@@ -672,7 +672,11 @@ function SocialPosterApp() {
         scheduledForUtcIso,
         draft.masterText,
         draft.overrides,
-        draft.media,
+        draft.media.map((item) => ({
+          path: item.path,
+          mimeType: item.mimeType,
+          altText: item.altText?.trim() ? item.altText.trim() : null,
+        })),
         platformIds,
         autoThread,
       );

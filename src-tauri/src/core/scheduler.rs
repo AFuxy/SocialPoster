@@ -17,6 +17,7 @@ use uuid::Uuid;
 pub struct SavedMediaRef {
     pub filename: String,
     pub mime_type: String,
+    #[serde(default)]
     pub alt_text: Option<String>,
     pub relative_path: String,
 }
@@ -575,10 +576,18 @@ mod tests {
 
         let refs = save_job_media(&dir, "job-1", &[attachment]).expect("saves media");
         assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].alt_text.as_deref(), Some("Sample"));
         assert!(schedule_media_job_dir(&dir, "job-1").is_dir());
 
-        let rehydrated = rehydrate_media(&dir, &refs).expect("rehydrates media");
+        // Verify schedule.json round-trips SavedMediaRef.alt_text.
+        let json = serde_json::to_string(&refs).expect("serialises media refs");
+        let parsed_refs: Vec<SavedMediaRef> =
+            serde_json::from_str(&json).expect("deserialises media refs");
+        assert_eq!(parsed_refs[0].alt_text.as_deref(), Some("Sample"));
+
+        let rehydrated = rehydrate_media(&dir, &parsed_refs).expect("rehydrates media");
         assert_eq!(rehydrated[0].bytes.as_deref(), Some(&[1, 2, 3, 4][..]));
+        assert_eq!(rehydrated[0].alt_text.as_deref(), Some("Sample"));
 
         cleanup_job_media(&dir, "job-1");
         assert!(!schedule_media_job_dir(&dir, "job-1").exists());
