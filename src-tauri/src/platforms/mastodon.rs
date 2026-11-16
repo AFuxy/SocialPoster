@@ -29,6 +29,7 @@ struct MediaResponse {
 
 #[derive(Debug, Deserialize)]
 struct StatusResponse {
+    id: String,
     url: Option<String>,
     uri: Option<String>,
 }
@@ -79,7 +80,7 @@ impl SocialPlatform for MastodonPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "0.1.1"
+        "0.1.2"
     }
 
     fn compatible_app_version(&self) -> &'static str {
@@ -176,6 +177,7 @@ impl SocialPlatform for MastodonPlatform {
             max_image_bytes: Some(8_000_000),
             supports_video: true,
             requires_media: false,
+            supports_threads: true,
         }
     }
 
@@ -353,6 +355,9 @@ impl SocialPlatform for MastodonPlatform {
         if !media_ids.is_empty() {
             payload["media_ids"] = json!(media_ids);
         }
+        if let Some(ref parent_id) = post.reply_parent_id {
+            payload["in_reply_to_id"] = json!(parent_id);
+        }
 
         let status_res = client
             .post(format!("{instance}/api/v1/statuses"))
@@ -379,6 +384,7 @@ impl SocialPlatform for MastodonPlatform {
             platform_id: self.id().to_string(),
             platform_name: self.name().to_string(),
             success: true,
+            post_id: Some(created.id),
             post_url: created.url.or(created.uri),
             error: None,
             notes: Vec::new(),

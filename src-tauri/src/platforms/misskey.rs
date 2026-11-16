@@ -72,7 +72,7 @@ impl SocialPlatform for MisskeyPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "0.1.1"
+        "0.1.2"
     }
 
     fn compatible_app_version(&self) -> &'static str {
@@ -157,6 +157,7 @@ impl SocialPlatform for MisskeyPlatform {
             max_image_bytes: Some(10_000_000),
             supports_video: true,
             requires_media: false,
+            supports_threads: true,
         }
     }
 
@@ -262,6 +263,9 @@ impl SocialPlatform for MisskeyPlatform {
         if !file_ids.is_empty() {
             note_payload.insert("fileIds".to_string(), json!(file_ids));
         }
+        if let Some(ref parent_id) = post.reply_parent_id {
+            note_payload.insert("replyId".to_string(), Value::String(parent_id.clone()));
+        }
 
         let note_res = client
             .post(format!("{instance_url}/api/notes/create"))
@@ -283,11 +287,14 @@ impl SocialPlatform for MisskeyPlatform {
             .await
             .map_err(|err| format!("Failed to parse Misskey note response: {err}"))?;
 
+        let note_id = created.created_note.id;
+
         Ok(PostOutcome {
             platform_id: self.id().to_string(),
             platform_name: self.name().to_string(),
             success: true,
-            post_url: Some(format!("{instance_url}/notes/{}", created.created_note.id)),
+            post_id: Some(note_id.clone()),
+            post_url: Some(format!("{instance_url}/notes/{note_id}")),
             error: None,
             notes: Vec::new(),
         })

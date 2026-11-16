@@ -143,6 +143,7 @@ impl SocialPlatform for SlackPlatform {
             max_image_bytes: Some(10_000_000),
             supports_video: true,
             requires_media: false,
+            supports_threads: false,
         }
     }
 
@@ -354,6 +355,7 @@ impl SocialPlatform for SlackPlatform {
             platform_id: self.id().to_string(),
             platform_name: self.name().to_string(),
             success: true,
+            post_id: None,
             post_url: None,
             error: None,
             notes: Vec::new(),

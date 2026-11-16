@@ -260,6 +260,7 @@ pub async fn start_platform_oauth(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn broadcast_post(
     app: AppHandle,
     state: State<'_, ProfileSessionState>,
@@ -268,10 +269,12 @@ pub async fn broadcast_post(
     master_text: String,
     overrides: HashMap<String, String>,
     media: Vec<MediaAttachment>,
+    auto_thread: Option<bool>,
 ) -> Result<Vec<PostOutcome>, String> {
     profiles::ensure_profile_unlocked(&app, &state, &profile_id)?;
 
-    let outcomes = dispatcher::dispatch_all(&profile_id, targets).await;
+    let outcomes =
+        dispatcher::dispatch_all(&profile_id, targets, auto_thread.unwrap_or(false)).await;
 
     let entry = HistoryEntry {
         id: new_history_id(),

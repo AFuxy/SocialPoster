@@ -9,7 +9,7 @@ Thank you for helping expand our supported social networks! Because this project
 1. **One File Per Network:** Place your implementation at `src-tauri/src/platforms/<network_id>.rs` (lowercase snake_case, e.g. `telegram.rs`, `threads.rs`, `lemmy.rs`).
 2. **Zero Central Servers:** Users run this app locally and supply their own API keys, App Passwords, or OAuth tokens. Never hardcode personal tokens or route user traffic through third-party proxies.
 3. **Self-Documenting Setup:** Every user installing the app from GitHub relies on your `setup_instructions()` Markdown guide to obtain their credentials. Write clear, numbered steps assuming the user has never opened a developer portal before.
-4. **Accurate Capabilities & Image Byte Ceilings:** Set `max_chars`, `max_images`, `max_image_bytes`, `supports_video`, and `requires_media` truthfully. Specify the network's documented image byte limit in `PlatformCapabilities { max_image_bytes: Some(...), .. }` (for example, `Some(976_562)` for Bluesky or `Some(5_000_000)` for X / LinkedIn) and rely on `core::media` for automatic resizing and JPEG compression rather than adding image-processing logic inside individual `.rs` platform files. Always read attachment bytes via `attachment.read_bytes().await?`.
+4. **Accurate Capabilities & Image Byte Ceilings:** Set `max_chars`, `max_images`, `max_image_bytes`, `supports_video`, `requires_media`, and `supports_threads` truthfully. Specify the network's documented image byte limit in `PlatformCapabilities { max_image_bytes: Some(...), .. }` (for example, `Some(976_562)` for Bluesky or `Some(5_000_000)` for X / LinkedIn) and rely on `core::media` for automatic resizing and JPEG compression rather than adding image-processing logic inside individual `.rs` platform files. Always read attachment bytes via `attachment.read_bytes().await?`. If the network supports reply chains, set `supports_threads: true`, populate `PostOutcome.post_id`, and honour `post.reply_root_id` / `post.reply_parent_id` inside `publish()` so `core::threading` can split long posts automatically.
 5. **Semantic Versioning & Host Compatibility:** Declare `version()` (e.g. `"0.1.0"`) and `compatible_app_version()`. Plugins targeting all `0.x` releases should declare `"<1.0.0"` (or `"^0.2.0"` when targeting a specific minor release); avoid `"^0.0.0"`, which locks minor and patch versions under SemVer rules.
 6. **Profile-Scoped Vault Access:** When implementing OAuth token refresh or credential updates inside a plugin, resolve the active `profile_id` from `creds.get(vault::PROFILE_ID_KEY)` and call `vault::save_secret(profile_id, ...)` rather than writing un-namespaced keyring entries.
 7. **Graceful Errors:** Never use `.unwrap()` or `panic!()` inside `publish()`, `verify_credentials()`, or `start_oauth()`. Map HTTP status codes and API error bodies into clear, human-readable `Err(String)` messages.
@@ -177,6 +177,7 @@ impl SocialPlatform for ExamplePlatform {
             max_image_bytes: Some(8_000_000),
             supports_video: false,
             requires_media: false,
+            supports_threads: true,
         }
     }
 
@@ -233,6 +234,7 @@ impl SocialPlatform for ExamplePlatform {
             platform_id: self.id().to_string(),
             platform_name: self.name().to_string(),
             success: true,
+            post_id: Some("12345".to_string()),
             post_url: Some("https://example.social/@user/12345".to_string()),
             error: None,
             notes: Vec::new(),

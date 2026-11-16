@@ -258,7 +258,7 @@ impl SocialPlatform for TwitterPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "0.1.1"
+        "0.1.2"
     }
 
     fn compatible_app_version(&self) -> &'static str {
@@ -355,6 +355,7 @@ impl SocialPlatform for TwitterPlatform {
             max_image_bytes: Some(5_000_000),
             supports_video: true,
             requires_media: false,
+            supports_threads: true,
         }
     }
 
@@ -610,6 +611,12 @@ impl SocialPlatform for TwitterPlatform {
         if !media_ids.is_empty() {
             tweet_body.insert("media".to_string(), json!({ "media_ids": media_ids }));
         }
+        if let Some(ref parent_id) = post.reply_parent_id {
+            tweet_body.insert(
+                "reply".to_string(),
+                json!({ "in_reply_to_tweet_id": parent_id }),
+            );
+        }
 
         let tweet_json = Value::Object(tweet_body);
         let tweet_res = send_with_auto_refresh(&client, &mut working_creds, |token| {
@@ -633,12 +640,15 @@ impl SocialPlatform for TwitterPlatform {
             .data
             .map(|d| d.id);
 
-        let post_url = tweet_id.map(|id| format!("https://x.com/i/web/status/{id}"));
+        let post_url = tweet_id
+            .as_deref()
+            .map(|id| format!("https://x.com/i/web/status/{id}"));
 
         Ok(PostOutcome {
             platform_id: self.id().to_string(),
             platform_name: self.name().to_string(),
             success: true,
+            post_id: tweet_id,
             post_url,
             error: None,
             notes: Vec::new(),

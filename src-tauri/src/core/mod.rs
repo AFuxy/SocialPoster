@@ -5,4 +5,5 @@ pub mod oauth;
 pub mod platform;
 pub mod profiles;
 pub mod registry;
+pub mod threading;
 pub mod vault;

@@ -71,6 +71,8 @@ pub struct PlatformCapabilities {
     pub max_image_bytes: Option<usize>,
     pub supports_video: bool,
     pub requires_media: bool,
+    #[serde(default)]
+    pub supports_threads: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,6 +121,10 @@ impl MediaAttachment {
 pub struct PostPayload {
     pub text: String,
     pub media: Vec<MediaAttachment>,
+    #[serde(default)]
+    pub reply_root_id: Option<String>,
+    #[serde(default)]
+    pub reply_parent_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +133,8 @@ pub struct PostOutcome {
     pub platform_id: String,
     pub platform_name: String,
     pub success: bool,
+    #[serde(default)]
+    pub post_id: Option<String>,
     pub post_url: Option<String>,
     pub error: Option<String>,
     #[serde(default)]

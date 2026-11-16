@@ -32,7 +32,9 @@ import {
   enabledPlatformsKey,
   getActiveProfileId,
   knownPlatformsKey,
+  loadAutoThread,
   loadDraft,
+  saveAutoThread,
   saveDraft,
   setActiveProfileId,
   type ComposerDraft,
@@ -160,6 +162,7 @@ function SocialPosterApp() {
 
   const [draft, setDraft] = useState<ComposerDraft>(EMPTY_DRAFT);
   const [draftRestored, setDraftRestored] = useState(false);
+  const [autoThread, setAutoThread] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
   const [platforms, setPlatforms] = useState<PlatformMetadata[]>([]);
@@ -192,6 +195,7 @@ function SocialPosterApp() {
     setEnabledIds(new Set());
     setDraft(EMPTY_DRAFT);
     setDraftRestored(false);
+    setAutoThread(false);
     setHistory([]);
     setOutcomes([]);
     setSettingsPlatform(null);
@@ -222,6 +226,7 @@ function SocialPosterApp() {
           const restoredDraft = loadDraft(profileId);
           setDraft(restoredDraft ?? EMPTY_DRAFT);
           setDraftRestored(restoredDraft !== null);
+          setAutoThread(loadAutoThread(profileId));
           setEnabledIds(reconcileEnabledPlatforms(profileId, platformList));
           hydratedProfileRef.current = profileId;
         } else {
@@ -530,6 +535,7 @@ function SocialPosterApp() {
         draft.masterText,
         draft.overrides,
         draft.media,
+        autoThread,
       );
       setOutcomes(results);
 
@@ -745,6 +751,13 @@ function SocialPosterApp() {
               onDraftChange={setDraft}
               draftRestored={draftRestored}
               onClearDraft={handleClearDraft}
+              autoThread={autoThread}
+              onAutoThreadChange={(enabled) => {
+                setAutoThread(enabled);
+                if (activeProfile) {
+                  saveAutoThread(activeProfile.id, enabled);
+                }
+              }}
               isPosting={isPosting}
               onBroadcast={handleBroadcast}
               onOpenSettings={(platform) => setSettingsPlatform(platform)}

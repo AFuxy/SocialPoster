@@ -22,6 +22,26 @@ export function overridesKey(profileId: string): string {
   return `universal-poster:${profileId}:overrides`;
 }
 
+export function autoThreadKey(profileId: string): string {
+  return `universal-poster:${profileId}:auto-thread`;
+}
+
+export function loadAutoThread(profileId: string): boolean {
+  try {
+    return localStorage.getItem(autoThreadKey(profileId)) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function saveAutoThread(profileId: string, enabled: boolean): void {
+  try {
+    localStorage.setItem(autoThreadKey(profileId), enabled ? "true" : "false");
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
 export interface ComposerDraft {
   masterText: string;
   overrides: Record<string, string>;
@@ -174,6 +194,7 @@ export function clearProfileStorage(profileId: string): void {
     localStorage.removeItem(knownPlatformsKey(profileId));
     localStorage.removeItem(draftKey(profileId));
     localStorage.removeItem(overridesKey(profileId));
+    localStorage.removeItem(autoThreadKey(profileId));
   } catch {
     // Ignore storage errors.
   }

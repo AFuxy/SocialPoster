@@ -29,6 +29,7 @@ struct UploadBlobResponse {
 #[derive(Debug, Deserialize)]
 struct CreateRecordResponse {
     uri: String,
+    cid: String,
 }
 
 fn current_iso8601_utc() -> String {
@@ -110,7 +111,7 @@ impl SocialPlatform for BlueskyPlatform {
     }
 
     fn version(&self) -> &'static str {
-        "0.1.1"
+        "0.1.2"
     }
 
     fn compatible_app_version(&self) -> &'static str {
@@ -163,6 +164,7 @@ impl SocialPlatform for BlueskyPlatform {
             max_image_bytes: Some(976_562),
             supports_video: false,
             requires_media: false,
+            supports_threads: true,
         }
     }
 
@@ -232,6 +234,22 @@ impl SocialPlatform for BlueskyPlatform {
             });
         }
 
+        if let (Some(root), Some(parent)) = (
+            post.reply_root_id.as_deref(),
+            post.reply_parent_id.as_deref(),
+        ) {
+            let (root_uri, root_cid) = root
+                .split_once('|')
+                .ok_or_else(|| "Invalid Bluesky root reply reference.".to_string())?;
+            let (parent_uri, parent_cid) = parent
+                .split_once('|')
+                .ok_or_else(|| "Invalid Bluesky parent reply reference.".to_string())?;
+            record["reply"] = json!({
+                "root": { "uri": root_uri, "cid": root_cid },
+                "parent": { "uri": parent_uri, "cid": parent_cid },
+            });
+        }
+
         let create_res = client
             .post(format!("{BSKY_PDS}/xrpc/com.atproto.repo.createRecord"))
             .bearer_auth(&session.access_jwt)
@@ -267,10 +285,13 @@ impl SocialPlatform for BlueskyPlatform {
             ))
         };
 
+        let post_id = Some(format!("{}|{}", created.uri, created.cid));
+
         Ok(PostOutcome {
             platform_id: self.id().to_string(),
             platform_name: self.name().to_string(),
             success: true,
+            post_id,
             post_url,
             error: None,
             notes: Vec::new(),

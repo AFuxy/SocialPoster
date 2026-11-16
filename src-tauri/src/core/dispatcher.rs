@@ -1,5 +1,5 @@
 use crate::core::platform::{MediaAttachment, PostOutcome, PostPayload};
-use crate::core::{media, registry, vault};
+use crate::core::{media, registry, threading, vault};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -19,6 +19,7 @@ fn failure_outcome(platform_id: String, platform_name: String, error: String) ->
         platform_id,
         platform_name,
         success: false,
+        post_id: None,
         post_url: None,
         error: Some(error),
         notes: Vec::new(),
@@ -26,11 +27,13 @@ fn failure_outcome(platform_id: String, platform_name: String, error: String) ->
 }
 
 /// Dispatches posts concurrently across all requested platforms using `JoinSet`.
-/// Each platform runs in an isolated task with its own timeout; a failure, timeout,
-/// or panic in one platform never cancels or panics sibling tasks.
+/// Each platform runs in an isolated task with its own timeout and per-platform
+/// media compression; when `auto_thread` is enabled on a thread-capable platform
+/// whose `max_chars` is exceeded, splits the post into a chained reply thread.
 pub async fn dispatch_all(
     profile_id: &str,
     targets: Vec<PlatformDispatchRequest>,
+    auto_thread: bool,
 ) -> Vec<PostOutcome> {
     let mut set: JoinSet<PostOutcome> = JoinSet::new();
     let mut outcomes: Vec<PostOutcome> = Vec::with_capacity(targets.len());
@@ -70,21 +73,17 @@ pub async fn dispatch_all(
             }
         };
 
-        let payload = PostPayload {
-            text: target.text,
-            media: target.media,
-        };
-
-        let max_image_bytes = platform.capabilities().max_image_bytes;
+        let caps = platform.capabilities();
+        let max_image_bytes = caps.max_image_bytes;
 
         set.spawn(async move {
-            let raw_media = payload.media;
+            let raw_media = target.media;
             let prep_result = tokio::task::spawn_blocking(move || {
                 media::prepare_media_for_platform(&raw_media, max_image_bytes)
             })
             .await;
 
-            let (prepared_media, notes) = match prep_result {
+            let (prepared_media, mut notes) = match prep_result {
                 Ok(Ok(pair)) => pair,
                 Ok(Err(err)) => return failure_outcome(platform_id, platform_name, err),
                 Err(err) => {
@@ -96,9 +95,132 @@ pub async fn dispatch_all(
                 }
             };
 
+            let should_thread =
+                auto_thread && caps.supports_threads && target.text.chars().count() > caps.max_chars;
+
+            if should_thread {
+                let chunks = threading::split_into_thread(&target.text, caps.max_chars, true);
+                let total = chunks.len();
+
+                if total > 1 {
+                    let mut chunk_iter = chunks.into_iter();
+                    let first_text = chunk_iter.next().unwrap_or_default();
+                    let first_payload = PostPayload {
+                        text: first_text,
+                        media: prepared_media,
+                        reply_root_id: None,
+                        reply_parent_id: None,
+                    };
+
+                    let first_outcome = match tokio::time::timeout(
+                        PLATFORM_PUBLISH_TIMEOUT,
+                        platform.publish(&first_payload, &creds),
+                    )
+                    .await
+                    {
+                        Ok(Ok(outcome)) => outcome,
+                        Ok(Err(err)) => {
+                            let mut out = failure_outcome(platform_id, platform_name, err);
+                            out.notes = notes;
+                            return out;
+                        }
+                        Err(_) => {
+                            let mut out = failure_outcome(
+                                platform_id,
+                                platform_name,
+                                format!(
+                                    "Publish request timed out after {} seconds.",
+                                    PLATFORM_PUBLISH_TIMEOUT.as_secs()
+                                ),
+                            );
+                            out.notes = notes;
+                            return out;
+                        }
+                    };
+
+                    let root_url = first_outcome.post_url.clone();
+                    let Some(root_id) = first_outcome.post_id.clone() else {
+                        let mut out = failure_outcome(
+                            platform_id,
+                            platform_name,
+                            "Platform did not return a post ID for thread chaining.".to_string(),
+                        );
+                        out.post_url = root_url;
+                        out.notes = notes;
+                        return out;
+                    };
+
+                    let mut parent_id = root_id.clone();
+
+                    for (idx, chunk_text) in chunk_iter.enumerate() {
+                        let published_so_far = idx + 1;
+                        let reply_payload = PostPayload {
+                            text: chunk_text,
+                            media: Vec::new(),
+                            reply_root_id: Some(root_id.clone()),
+                            reply_parent_id: Some(parent_id.clone()),
+                        };
+
+                        let reply_result = tokio::time::timeout(
+                            PLATFORM_PUBLISH_TIMEOUT,
+                            platform.publish(&reply_payload, &creds),
+                        )
+                        .await;
+
+                        match reply_result {
+                            Ok(Ok(next_outcome)) => {
+                                if let Some(next_id) = next_outcome.post_id {
+                                    parent_id = next_id;
+                                }
+                            }
+                            Ok(Err(err)) => {
+                                let mut out = failure_outcome(
+                                    platform_id,
+                                    platform_name,
+                                    format!(
+                                        "Published {published_so_far}/{total} posts before error: {err}"
+                                    ),
+                                );
+                                out.post_id = Some(root_id);
+                                out.post_url = root_url;
+                                out.notes = notes;
+                                return out;
+                            }
+                            Err(_) => {
+                                let mut out = failure_outcome(
+                                    platform_id,
+                                    platform_name,
+                                    format!(
+                                        "Published {published_so_far}/{total} posts before error: timed out after {} seconds.",
+                                        PLATFORM_PUBLISH_TIMEOUT.as_secs()
+                                    ),
+                                );
+                                out.post_id = Some(root_id);
+                                out.post_url = root_url;
+                                out.notes = notes;
+                                return out;
+                            }
+                        }
+                    }
+
+                    notes.push(format!("Published as {total}-part thread"));
+                    return PostOutcome {
+                        platform_id,
+                        platform_name,
+                        success: true,
+                        post_id: Some(root_id),
+                        post_url: root_url,
+                        error: None,
+                        notes,
+                    };
+                }
+            }
+
             let prepared_payload = PostPayload {
-                text: payload.text,
+                text: target.text,
                 media: prepared_media,
+                reply_root_id: None,
+                reply_parent_id: None,
             };
 
             match tokio::time::timeout(

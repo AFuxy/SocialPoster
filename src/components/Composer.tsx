@@ -32,9 +32,19 @@ interface ComposerProps {
   onDraftChange: React.Dispatch<React.SetStateAction<ComposerDraft>>;
   draftRestored: boolean;
   onClearDraft: () => void;
+  autoThread: boolean;
+  onAutoThreadChange: (enabled: boolean) => void;
   isPosting: boolean;
   onBroadcast: (targets: PlatformDispatchRequest[]) => Promise<void>;
   onOpenSettings: (platform: PlatformMetadata) => void;
+}
+
+function estimateThreadParts(text: string, maxChars: number): number {
+  const len = Array.from(text).length;
+  if (maxChars <= 0 || len <= maxChars) return 1;
+  const approxReserve = 8; // " (10/10)"
+  const budget = Math.max(1, maxChars - approxReserve);
+  return Math.max(2, Math.ceil(len / budget));
 }
 
 interface PlatformValidation {
@@ -92,6 +102,8 @@ export function Composer({
   onDraftChange,
   draftRestored,
   onClearDraft,
+  autoThread,
+  onAutoThreadChange,
   isPosting,
   onBroadcast,
 }: ComposerProps) {
@@ -195,10 +207,15 @@ export function Composer({
       const charCount = resolvedText.length;
       const errors: string[] = [];
 
+      const willThread =
+        autoThread &&
+        Boolean(platform.capabilities.supportsThreads) &&
+        charCount > platform.capabilities.maxChars;
+
       if (!platform.isConfigured) {
         errors.push("Setup required");
       }
-      if (charCount > platform.capabilities.maxChars) {
+      if (charCount > platform.capabilities.maxChars && !willThread) {
         errors.push(
           `Exceeds ${platform.capabilities.maxChars.toLocaleString()} chars`,
         );
@@ -223,7 +240,7 @@ export function Composer({
         errors,
       };
     });
-  }, [enabledPlatforms, masterText, media, overrides]);
+  }, [autoThread, enabledPlatforms, masterText, media, overrides]);
 
   const hasValidationErrors = validations.some((v) => v.errors.length > 0);
   const canPost =
@@ -511,7 +528,7 @@ export function Composer({
         </div>
       )}
 
-      {/* Compact character counter & Post Now footer */}
+      {/* Compact character counter, Auto-thread toggle & Post Now footer */}
       <div className="mt-4 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {enabledPlatforms.length === 0 ? (
@@ -519,6 +536,19 @@ export function Composer({
               Click a platform above to set it up
             </span>
           ) : (() => {
+            const threadSummaries = autoThread
+              ? validations
+                  .filter(
+                    (v) =>
+                      Boolean(v.platform.capabilities.supportsThreads) &&
+                      v.charCount > v.platform.capabilities.maxChars,
+                  )
+                  .map(
+                    (v) =>
+                      `${estimateThreadParts(v.resolvedText, v.platform.capabilities.maxChars)} posts on ${v.platform.name}`,
+                  )
+              : [];
+
             if (activeTab !== "master") {
               const activeValidation = validations.find(
                 (v) => v.platform.id === activeTab,
@@ -526,7 +556,11 @@ export function Composer({
               if (activeValidation) {
                 const isOver =
                   activeValidation.charCount >
-                  activeValidation.platform.capabilities.maxChars;
+                    activeValidation.platform.capabilities.maxChars &&
+                  !(
+                    autoThread &&
+                    Boolean(activeValidation.platform.capabilities.supportsThreads)
+                  );
                 const mediaError = activeValidation.errors.find(
                   (e) =>
                     e === "Media required" ||
@@ -534,23 +568,50 @@ export function Composer({
                     e.startsWith("Max "),
                 );
                 return (
-                  <span
-                    className={cn(
-                      "tabular-nums",
-                      isOver || mediaError
-                        ? "font-medium text-destructive"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    {activeValidation.charCount} /{" "}
-                    {activeValidation.platform.capabilities.maxChars}
-                    {mediaError ? ` · ${mediaError}` : ""}
-                  </span>
+                  <>
+                    <span
+                      className={cn(
+                        "tabular-nums",
+                        isOver || mediaError
+                          ? "font-medium text-destructive"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {activeValidation.charCount} /{" "}
+                      {activeValidation.platform.capabilities.maxChars}
+                      {mediaError ? ` · ${mediaError}` : ""}
+                    </span>
+                    {autoThread &&
+                      Boolean(
+                        activeValidation.platform.capabilities.supportsThreads,
+                      ) &&
+                      activeValidation.charCount >
+                        activeValidation.platform.capabilities.maxChars && (
+                        <span className="text-muted-foreground">
+                          ·{" "}
+                          {estimateThreadParts(
+                            activeValidation.resolvedText,
+                            activeValidation.platform.capabilities.maxChars,
+                          )}{" "}
+                          posts on {activeValidation.platform.name}
+                        </span>
+                      )}
+                  </>
                 );
               }
             }
 
-            const tightest = validations.reduce((min, curr) =>
+            const nonThreadedOrSingle = validations.filter(
+              (v) =>
+                !(
+                  autoThread &&
+                  Boolean(v.platform.capabilities.supportsThreads) &&
+                  v.charCount > v.platform.capabilities.maxChars
+                ),
+            );
+            const tightestSource =
+              nonThreadedOrSingle.length > 0 ? nonThreadedOrSingle : validations;
+            const tightest = tightestSource.reduce((min, curr) =>
               curr.platform.capabilities.maxChars <
               min.platform.capabilities.maxChars
                 ? curr
@@ -558,7 +619,11 @@ export function Composer({
             );
             const anyCharOrMediaError = validations.some(
               (v) =>
-                v.charCount > v.platform.capabilities.maxChars ||
+                (v.charCount > v.platform.capabilities.maxChars &&
+                  !(
+                    autoThread &&
+                    Boolean(v.platform.capabilities.supportsThreads)
+                  )) ||
                 v.errors.some(
                   (e) =>
                     e === "Media required" ||
@@ -576,35 +641,67 @@ export function Composer({
               );
 
             return (
-              <span
-                className={cn(
-                  "tabular-nums",
-                  anyCharOrMediaError
-                    ? "font-medium text-destructive"
-                    : "text-muted-foreground",
+              <>
+                <span
+                  className={cn(
+                    "tabular-nums",
+                    anyCharOrMediaError
+                      ? "font-medium text-destructive"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {tightest.charCount} /{" "}
+                  {tightest.platform.capabilities.maxChars} ·{" "}
+                  {tightest.platform.name}
+                  {firstMediaError ? ` · ${firstMediaError}` : ""}
+                </span>
+                {threadSummaries.length > 0 && (
+                  <span className="text-muted-foreground">
+                    · {threadSummaries.join(" · ")}
+                  </span>
                 )}
-              >
-                {tightest.charCount} / {tightest.platform.capabilities.maxChars}{" "}
-                · {tightest.platform.name}
-                {firstMediaError ? ` · ${firstMediaError}` : ""}
-              </span>
+              </>
             );
           })()}
         </div>
 
-        <Button
-          type="button"
-          onClick={handleSubmit}
-          disabled={!canPost}
-          className="shrink-0"
-        >
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoThread}
+            onClick={() => onAutoThreadChange(!autoThread)}
+            disabled={isPosting}
+            className={cn(
+              "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+              autoThread
+                ? "border-primary bg-primary/10 text-foreground"
+                : "border-border bg-muted/40 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                autoThread ? "bg-primary" : "bg-muted-foreground/50",
+              )}
+            />
+            <span>Auto-thread</span>
+          </button>
+
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={!canPost}
+            className="shrink-0"
+          >
           {isPosting ? (
             <Loader2 className="mr-2 size-4 animate-spin" />
           ) : (
             <Send className="mr-2 size-4" />
           )}
           {isPosting ? "Posting..." : "Post Now"}
-        </Button>
+          </Button>
+        </div>
       </div>
     </section>
   );

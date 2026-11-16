@@ -53,6 +53,7 @@ export interface PlatformCapabilities {
   maxImageBytes?: number | null;
   supportsVideo: boolean;
   requiresMedia: boolean;
+  supportsThreads?: boolean;
 }
 
 export interface PlatformMetadata {
@@ -92,6 +93,7 @@ export interface PostOutcome {
   platformId: string;
   platformName: string;
   success: boolean;
+  postId?: string | null;
   postUrl: string | null;
   error: string | null;
   notes?: string[];
@@ -209,6 +211,7 @@ export async function broadcastPost(
   masterText: string,
   overrides: Record<string, string>,
   media: MediaAttachment[],
+  autoThread: boolean,
 ): Promise<PostOutcome[]> {
   return invoke<PostOutcome[]>("broadcast_post", {
     profileId,
@@ -216,6 +219,7 @@ export async function broadcastPost(
     masterText,
     overrides,
     media,
+    autoThread,
   });
 }
 
