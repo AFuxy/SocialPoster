@@ -4,10 +4,134 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri + React + Typescript</title>
+    <title>SocialPoster</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background-color: #0a0a0a;
+      }
+
+      #startup-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #0a0a0a;
+        color: #fafafa;
+        font-family: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+        opacity: 1;
+        transition: opacity 220ms ease-out;
+      }
+
+      #startup-splash.splash-hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .splash-stack {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .splash-logo {
+        width: 56px;
+        height: 56px;
+        display: block;
+      }
+
+      .splash-title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        color: #fafafa;
+      }
+
+      .splash-track {
+        position: relative;
+        width: 140px;
+        height: 3px;
+        border-radius: 9999px;
+        overflow: hidden;
+        background-color: rgba(255, 255, 255, 0.12);
+      }
+
+      .splash-bar {
+        position: absolute;
+        inset-block: 0;
+        left: 0;
+        width: 45%;
+        border-radius: 9999px;
+        background-color: #fafafa;
+        animation: splash-slide 1.15s ease-in-out infinite;
+      }
+
+      .splash-status {
+        margin: 0;
+        font-size: 12px;
+        color: #a1a1aa;
+      }
+
+      @keyframes splash-slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(320%);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #startup-splash {
+          transition: opacity 1ms linear;
+        }
+        .splash-bar {
+          animation: none;
+          width: 60%;
+          left: 20%;
+        }
+      }
+    </style>
   </head>
 
   <body>
+    <div id="startup-splash" role="status" aria-label="Loading workspace">
+      <div class="splash-stack">
+        <svg
+          class="splash-logo"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="80 80 864 864"
+          fill="none"
+          aria-hidden="true"
+        >
+          <rect
+            x="84"
+            y="84"
+            width="856"
+            height="856"
+            rx="205"
+            fill="#18181B"
+            stroke="#3F3F46"
+            stroke-width="8"
+          />
+          <polygon points="752,272 272,460 460,536" fill="#FAFAFA" />
+          <polygon points="752,272 488,564 564,752" fill="#FAFAFA" />
+          <polygon points="752,272 460,536 488,564" fill="#A1A1AA" />
+        </svg>
+        <p class="splash-title">SocialPoster</p>
+        <div class="splash-track" aria-hidden="true">
+          <div class="splash-bar"></div>
+        </div>
+        <p class="splash-status">Loading workspace…</p>
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

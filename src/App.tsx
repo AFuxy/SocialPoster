@@ -216,6 +216,7 @@ function SocialPosterApp() {
   const [platforms, setPlatforms] = useState<PlatformMetadata[]>([]);
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
+  const [isInitialised, setIsInitialised] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [outcomes, setOutcomes] = useState<PostOutcome[]>([]);
@@ -343,6 +344,38 @@ function SocialPosterApp() {
   useEffect(() => {
     void refreshProfilesAndActivate();
   }, [refreshProfilesAndActivate]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setIsInitialised(true);
+    }
+  }, [isLoading]);
+
+  useEffect(() => {
+    const fallbackTimer = window.setTimeout(() => {
+      setIsInitialised(true);
+    }, 3000);
+    return () => window.clearTimeout(fallbackTimer);
+  }, []);
+
+  useEffect(() => {
+    if (!isInitialised) return;
+    const splash = document.getElementById("startup-splash");
+    if (!splash) return;
+
+    splash.classList.add("splash-hidden");
+
+    const removeSplash = () => {
+      splash.remove();
+    };
+    splash.addEventListener("transitionend", removeSplash, { once: true });
+    const cleanupTimer = window.setTimeout(removeSplash, 250);
+
+    return () => {
+      splash.removeEventListener("transitionend", removeSplash);
+      window.clearTimeout(cleanupTimer);
+    };
+  }, [isInitialised]);
 
   useEffect(() => {
     if (
